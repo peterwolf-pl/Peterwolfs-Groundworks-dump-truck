@@ -5,6 +5,8 @@ import com.piotrek.groundworksdumptruck.client.input.DumpTruckInputHandler;
 import com.piotrek.groundworksdumptruck.client.input.DumpTruckKeyBindings;
 import com.piotrek.groundworksdumptruck.client.model.DumpTruckModel;
 import com.piotrek.groundworksdumptruck.client.render.DumpTruckRenderer;
+import com.piotrek.groundworksdumptruck.client.render.DumpTruckHudOverlay;
+import com.piotrek.groundworksdumptruck.client.sound.DumpTruckEngineSoundController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
@@ -28,5 +30,7 @@ public class GroundworksDumpTruckClient implements ClientModInitializer {
         );
         DumpTruckKeyBindings.register();
         ClientTickEvents.END_CLIENT_TICK.register(DumpTruckInputHandler::clientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(DumpTruckEngineSoundController::clientTick);
+        DumpTruckHudOverlay.register();
     }
 }
