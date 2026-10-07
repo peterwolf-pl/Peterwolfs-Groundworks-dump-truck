@@ -265,8 +265,13 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             double horizontal = Math.sqrt(moved.x * moved.x + moved.z * moved.z);
             remoteAdvanceRemaining = Math.max(0.0D, remoteAdvanceRemaining - horizontal);
 
-            if (remoteAdvanceRemaining <= 0.01D || horizontal < 0.001D) {
+            if (remoteAdvanceRemaining <= 0.01D) {
                 remoteAdvanceRemaining = 0.0D;
+                movementController.stopMotion();
+                inputThrottle = 0.0F;
+            } else if (horizontal < 0.001D) {
+                // A blocked truck must not report the remote move as complete.
+                // Keep the remaining distance pending so the excavator waits.
                 movementController.stopMotion();
                 inputThrottle = 0.0F;
             }
