@@ -913,8 +913,12 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         Vec3 forward = forwardVector();
         Vec3 right = rightVector();
 
-        return forward.scale(2.0D)
-                .add(right.scale(-0.48D))
+        // Keep the rider attachment calibrated to the actual modeled driver's
+        // seat center: seat X = -6.5 px (-0.40625 block), seat Z = 31.5 px
+        // (1.96875 blocks forward). This prevents the player from sitting beside
+        // the seat while still keeping the existing vertical riding pose.
+        return forward.scale(1.96875D)
+                .add(right.scale(-0.40625D))
                 .add(0.0D, 1.48D, 0.0D);
     }
 
