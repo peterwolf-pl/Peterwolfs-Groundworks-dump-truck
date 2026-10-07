@@ -89,7 +89,12 @@ public final class GranularDumpBedContentsRenderer {
         float frontZPx = lerp(42.0F, 60.0F, footprint);
 
         float floorYPx = -6.2F;
-        float peakRisePx = lerp(3.0F, 15.5F, fill);
+        // The full body is roughly 10 cubic Minecraft blocks. At 100% the
+        // average material depth is therefore close to 0.9 block, with the
+        // crown staying just below the 20 px side-wall height.
+        float peakRisePx = lerp(3.0F, 18.0F, fill);
+        float lateralFalloff = lerp(0.55F, 0.25F, fill);
+        float longitudinalFalloff = lerp(0.50F, 0.20F, fill);
 
         Vector3f[][] vertices = new Vector3f[X_SEGMENTS + 1][Z_SEGMENTS + 1];
 
@@ -104,8 +109,8 @@ public final class GranularDumpBedContentsRenderer {
 
                 float longitudinal = Math.abs((fz - 0.48F) * 2.0F);
                 float profile = 1.0F
-                        - 0.48F * nx * nx
-                        - 0.42F * longitudinal * longitudinal;
+                        - lateralFalloff * nx * nx
+                        - longitudinalFalloff * longitudinal * longitudinal;
 
                 // Deterministic variation gives the surface a loose pile shape
                 // without flicker or per-frame random geometry.
