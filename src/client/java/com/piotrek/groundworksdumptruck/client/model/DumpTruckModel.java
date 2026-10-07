@@ -88,9 +88,6 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         // the old solid upper cab so the interior is actually
                         // visible through the windscreen and side openings.
                         .texOffs(0, 128).addBox(-15.0F, -30.0F, 19.0F, 30.0F, 20.0F, 3.0F)
-                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 22.0F, 3.0F, 20.0F, 20.0F)
-                        .texOffs(0, 128).addBox(12.0F, -30.0F, 22.0F, 3.0F, 20.0F, 20.0F)
-
                         // Side window division: narrow rear and front pillars.
                         .texOffs(0, 128).addBox(-15.5F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
                         .texOffs(0, 128).addBox(12.0F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
