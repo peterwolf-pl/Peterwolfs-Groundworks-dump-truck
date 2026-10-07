@@ -1,7 +1,7 @@
 package com.piotrek.groundworksdumptruck.entity;
 
 import com.piotrek.groundworks.api.GroundworksApi;
-import com.piotrek.groundworks.api.container.IWorldGranularContainer;
+import com.piotrek.groundworks.api.container.IMobileWorldGranularContainer;
 import com.piotrek.groundworks.api.deposit.DepositResult;
 import com.piotrek.groundworks.api.material.GranularComposition;
 import com.piotrek.groundworks.api.material.GranularMaterial;
@@ -45,7 +45,7 @@ import org.jetbrains.annotations.Nullable;
  * <p>The body is a real Groundworks granular container. Capacity is exactly
  * ten full Groundworks blocks: 10 x 512 = 5120 integer units.</p>
  */
-public class GroundworksDumpTruckEntity extends Entity implements IWorldGranularContainer {
+public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGranularContainer {
 
     public static final int BED_CAPACITY = 5120;
     public static final float MAX_BED_ANGLE = 50.0F;
@@ -98,6 +98,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
     private int inputFreshTicks;
     private float bedAngle;
     private boolean overflowSideToggle;
+    private double remoteAdvanceRemaining;
 
     public GroundworksDumpTruckEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -136,6 +137,21 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
     }
 
     @Override
+    public boolean requestAdvance(double blocks) {
+        if (level().isClientSide()
+                || blocks <= 0.0D
+                || getControllingPassenger() != null
+                || remoteAdvanceRemaining > 0.01D) {
+            return false;
+        }
+
+        remoteAdvanceRemaining = Math.clamp(blocks, 0.1D, 4.0D);
+        movementController.stopMotion();
+        inputFreshTicks = 0;
+        return true;
+    }
+
+    @Override
     public void tick() {
         super.tick();
 
@@ -168,6 +184,11 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
                 if (vanillaInput.left()) inputSteer = -1.0F;
                 else if (vanillaInput.right()) inputSteer = 1.0F;
             }
+        } else if (remoteAdvanceRemaining > 0.01D) {
+            inputThrottle = 0.65F;
+            inputSteer = 0.0F;
+            inputBedLift = 0.0F;
+            inputFreshTicks = 0;
         } else {
             inputThrottle = 0.0F;
             inputSteer = 0.0F;
@@ -175,7 +196,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
             inputFreshTicks = 0;
         }
 
-        entityData.set(ENGINE_RUNNING, driver != null);
+        entityData.set(ENGINE_RUNNING, driver != null || remoteAdvanceRemaining > 0.01D);
 
         bedAngle = Mth.clamp(
                 bedAngle + inputBedLift * BED_SPEED,
@@ -206,6 +227,10 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
                 );
 
         float speed = moveResult.forwardSpeed();
+        if (remoteAdvanceRemaining > 0.01D) {
+            speed = (float) Math.min(speed, remoteAdvanceRemaining);
+        }
+
         float yawRad = (float) Math.toRadians(getYRot());
         double dx = -Math.sin(yawRad) * speed;
         double dz = Math.cos(yawRad) * speed;
@@ -227,7 +252,20 @@ public class GroundworksDumpTruckEntity extends Entity implements IWorldGranular
             dy = onGround() ? 0.0D : -0.08D;
         }
 
+        Vec3 beforeMove = position();
         move(MoverType.SELF, new Vec3(dx, dy, dz));
+
+        if (remoteAdvanceRemaining > 0.01D) {
+            Vec3 moved = position().subtract(beforeMove);
+            double horizontal = Math.sqrt(moved.x * moved.x + moved.z * moved.z);
+            remoteAdvanceRemaining = Math.max(0.0D, remoteAdvanceRemaining - horizontal);
+
+            if (remoteAdvanceRemaining <= 0.01D || horizontal < 0.001D) {
+                remoteAdvanceRemaining = 0.0D;
+                movementController.stopMotion();
+                inputThrottle = 0.0F;
+            }
+        }
 
         boolean dumping = tickDumping(serverLevel);
 
