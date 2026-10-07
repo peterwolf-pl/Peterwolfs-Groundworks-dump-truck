@@ -80,8 +80,13 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
         PartDefinition cab = root.addOrReplaceChild(
                 "cab",
                 CubeListBuilder.create()
-                        // Lower cab and wheel arches.
-                        .texOffs(0, 128).addBox(-16.0F, -10.0F, 17.0F, 32.0F, 18.0F, 28.0F)
+                        // Hollow lower cab. The old 32x18x28 solid block
+                        // filled the whole footwell and hid the driver interior.
+                        // Keep only a floor, rear lower bulkhead and low sill panels.
+                        .texOffs(0, 128).addBox(-15.0F, 4.0F, 19.0F, 30.0F, 4.0F, 26.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -10.0F, 19.0F, 30.0F, 14.0F, 3.0F)
+                        .texOffs(0, 128).addBox(-15.5F, -6.0F, 22.0F, 3.5F, 10.0F, 20.0F)
+                        .texOffs(0, 128).addBox(12.0F, -6.0F, 22.0F, 3.5F, 10.0F, 20.0F)
 
                         // Real hollow upper cab: rear wall, A/B pillars, door
                         // lower panels and window frames. These boxes replace
@@ -124,11 +129,16 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(256, 64).addBox(-23.0F, -28.0F, 37.0F, 3.0F, 7.0F, 5.0F)
                         .texOffs(256, 64).addBox(20.0F, -28.0F, 37.0F, 3.0F, 7.0F, 5.0F)
 
-                        // Interior: seat, steering wheel and dashboard.
-                        .texOffs(256, 64).addBox(-7.0F, -9.0F, 27.0F, 10.0F, 4.0F, 9.0F)
-                        .texOffs(256, 64).addBox(-7.0F, -18.0F, 27.0F, 10.0F, 9.0F, 3.0F)
-                        .texOffs(256, 64).addBox(-7.0F, -13.0F, 39.0F, 14.0F, 5.0F, 3.0F)
-                        .texOffs(256, 64).addBox(-8.0F, -14.0F, 40.0F, 6.0F, 1.0F, 6.0F)
+                        // Interior: clearly left-hand driver's seat and dashboard.
+                        .texOffs(256, 64).addBox(-11.0F, -9.0F, 27.0F, 9.0F, 4.0F, 9.0F)
+                        .texOffs(256, 64).addBox(-11.0F, -18.0F, 27.0F, 9.0F, 9.0F, 3.0F)
+                        .texOffs(256, 64).addBox(-12.0F, -13.0F, 38.5F, 24.0F, 5.0F, 3.0F)
+
+                        // Pedal/tunnel details keep the lower cabin readable without
+                        // filling the footwell.
+                        .texOffs(256, 64).addBox(-1.5F, -2.0F, 25.0F, 3.0F, 6.0F, 16.0F)
+                        .texOffs(256, 64).addBox(-10.0F, 1.5F, 38.0F, 3.0F, 1.0F, 4.0F)
+                        .texOffs(256, 64).addBox(-5.0F, 1.5F, 38.0F, 3.0F, 1.0F, 4.0F)
 
                         // Headlamps and indicators.
                         .texOffs(448, 0).addBox(-13.0F, -5.0F, 48.1F, 7.0F, 5.0F, 1.0F)
@@ -136,6 +146,25 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(448, 32).addBox(-15.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F)
                         .texOffs(448, 32).addBox(10.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F),
                 PartPose.ZERO
+        );
+
+        // Steering wheel is a separate, angled child so it remains clearly
+        // visible through the empty windscreen and side opening.
+        cab.addOrReplaceChild(
+                "steering_wheel",
+                CubeListBuilder.create()
+                        .texOffs(384, 64).addBox(-4.5F, -0.8F, -1.0F, 9.0F, 1.6F, 2.0F)
+                        .texOffs(384, 64).addBox(-0.8F, -4.5F, -1.0F, 1.6F, 9.0F, 2.0F)
+                        .texOffs(384, 64).addBox(-1.5F, -1.5F, -2.0F, 3.0F, 3.0F, 3.0F)
+                        .texOffs(256, 64).addBox(-0.8F, -0.8F, 0.0F, 1.6F, 1.6F, 7.0F),
+                PartPose.offsetAndRotation(
+                        -6.5F,
+                        -15.0F,
+                        39.0F,
+                        (float) Math.toRadians(-24.0F),
+                        0.0F,
+                        0.0F
+                )
         );
 
         // Beacon uses a local pivot at its own center. Keeping absolute cab-space
