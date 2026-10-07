@@ -82,8 +82,30 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                 CubeListBuilder.create()
                         // Lower cab and wheel arches.
                         .texOffs(0, 128).addBox(-16.0F, -10.0F, 17.0F, 32.0F, 18.0F, 28.0F)
-                        .texOffs(0, 128).addBox(-15.0F, -24.0F, 19.0F, 30.0F, 14.0F, 23.0F)
-                        .texOffs(0, 128).addBox(-14.0F, -30.0F, 20.5F, 28.0F, 6.0F, 20.0F)
+
+                        // Real hollow upper cab: rear wall, A/B pillars, door
+                        // lower panels and window frames. These boxes replace
+                        // the old solid upper cab so the interior is actually
+                        // visible through the windscreen and side openings.
+                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 19.0F, 30.0F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 22.0F, 3.0F, 20.0F, 20.0F)
+                        .texOffs(0, 128).addBox(12.0F, -30.0F, 22.0F, 3.0F, 20.0F, 20.0F)
+
+                        // Side window division: narrow rear and front pillars.
+                        .texOffs(0, 128).addBox(-15.5F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(12.0F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(-15.5F, -30.0F, 39.0F, 3.5F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(12.0F, -30.0F, 39.0F, 3.5F, 20.0F, 3.0F)
+
+                        // Lower door skins leave the upper side windows open.
+                        .texOffs(0, 128).addBox(-15.5F, -12.0F, 24.5F, 3.5F, 12.0F, 14.5F)
+                        .texOffs(0, 128).addBox(12.0F, -12.0F, 24.5F, 3.5F, 12.0F, 14.5F)
+
+                        // Front windscreen surround and centre divider. No glass.
+                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 41.0F, 3.0F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(12.0F, -30.0F, 41.0F, 3.0F, 20.0F, 3.0F)
+                        .texOffs(0, 128).addBox(-1.0F, -29.0F, 41.5F, 2.0F, 17.0F, 2.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -13.0F, 41.0F, 30.0F, 3.0F, 3.0F)
 
                         // Sloped nose and grille surround.
                         .texOffs(0, 128).addBox(-15.0F, -8.0F, 42.0F, 30.0F, 14.0F, 6.0F)
