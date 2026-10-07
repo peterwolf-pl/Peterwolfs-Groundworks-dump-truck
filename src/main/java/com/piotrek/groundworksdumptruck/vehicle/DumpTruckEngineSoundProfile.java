@@ -3,10 +3,10 @@ package com.piotrek.groundworksdumptruck.vehicle;
 /** Maps authoritative engine demand and payload mass to a diesel sound mix. */
 public final class DumpTruckEngineSoundProfile {
 
-    private static final float IDLE_VOLUME = 0.48F;
-    private static final float LOAD_VOLUME = 0.86F;
-    private static final float IDLE_PITCH = 0.80F;
-    private static final float LOAD_PITCH = 1.08F;
+    private static final float IDLE_VOLUME = 0.50F;
+    private static final float LOAD_VOLUME = 0.88F;
+    private static final float IDLE_PITCH = 0.92F;
+    private static final float LOAD_PITCH = 1.16F;
 
     private DumpTruckEngineSoundProfile() {}
 
@@ -23,11 +23,11 @@ public final class DumpTruckEngineSoundProfile {
         // A loaded truck sounds slightly deeper at the same throttle.
         float pitch = IDLE_PITCH
                 + (LOAD_PITCH - IDLE_PITCH) * load
-                - 0.07F * payload;
+                - 0.04F * payload;
 
         return new Mix(
                 Math.clamp(volume, 0.0F, 1.0F),
-                Math.clamp(pitch, 0.70F, 1.15F)
+                Math.clamp(pitch, 0.84F, 1.18F)
         );
     }
 }
