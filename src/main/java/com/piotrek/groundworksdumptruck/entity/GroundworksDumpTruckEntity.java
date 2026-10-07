@@ -84,6 +84,8 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
     private static final EntityDataAccessor<Boolean> ENGINE_RUNNING =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Float> ENGINE_LOAD =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Boolean> IS_DUMPING =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
 
@@ -97,6 +99,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
     private float inputBedLift;
     private int inputFreshTicks;
     private float bedAngle;
+    private float engineLoad;
     private boolean overflowSideToggle;
     private double remoteAdvanceRemaining;
 
@@ -126,6 +129,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         builder.define(COBBLESTONE_UNITS, 0);
 
         builder.define(ENGINE_RUNNING, false);
+        builder.define(ENGINE_LOAD, 0.0F);
         builder.define(IS_DUMPING, false);
     }
 
@@ -201,7 +205,22 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             inputFreshTicks = 0;
         }
 
-        entityData.set(ENGINE_RUNNING, driver != null || remoteAdvanceRemaining > 0.01D);
+        boolean engineRunning = driver != null || remoteAdvanceRemaining > 0.01D;
+        entityData.set(ENGINE_RUNNING, engineRunning);
+
+        float fillRatio = (float) storedUnits() / (float) BED_CAPACITY;
+        float driveDemand = Math.abs(inputThrottle) * (0.68F + 0.22F * fillRatio);
+        float steerDemand = Math.abs(inputSteer) * 0.30F;
+        float hydraulicDemand = Math.abs(inputBedLift) * 0.88F;
+        float remoteDemand = remoteAdvanceRemaining > 0.01D ? 0.58F + 0.20F * fillRatio : 0.0F;
+        float targetEngineLoad = engineRunning
+                ? Mth.clamp(0.14F + Math.max(
+                        Math.max(driveDemand, steerDemand),
+                        Math.max(hydraulicDemand, remoteDemand)
+                ), 0.0F, 1.0F)
+                : 0.0F;
+        engineLoad += (targetEngineLoad - engineLoad) * 0.18F;
+        entityData.set(ENGINE_LOAD, engineLoad);
 
         bedAngle = Mth.clamp(
                 bedAngle + inputBedLift * BED_SPEED,
@@ -1064,6 +1083,14 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
     public boolean isEngineRunning() {
         return entityData.get(ENGINE_RUNNING);
+    }
+
+    public float getEngineLoad() {
+        return entityData.get(ENGINE_LOAD);
+    }
+
+    public float getFillRatio() {
+        return (float) getCarriedUnits() / (float) BED_CAPACITY;
     }
 
     public boolean isDumping() {
