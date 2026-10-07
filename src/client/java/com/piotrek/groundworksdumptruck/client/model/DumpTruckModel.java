@@ -93,11 +93,6 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(0, 128).addBox(-16.0F, -33.0F, 18.0F, 32.0F, 3.0F, 25.0F)
                         .texOffs(0, 128).addBox(-15.5F, -31.5F, 42.5F, 31.0F, 2.0F, 4.0F)
 
-                        // Windscreen and side glazing overlays.
-                        .texOffs(320, 128).addBox(-12.5F, -27.5F, 43.1F, 25.0F, 14.0F, 1.0F)
-                        .texOffs(320, 128).addBox(-16.1F, -27.0F, 24.0F, 1.0F, 13.0F, 15.0F)
-                        .texOffs(320, 128).addBox(15.1F, -27.0F, 24.0F, 1.0F, 13.0F, 15.0F)
-
                         // Door seams / lower steps.
                         .texOffs(256, 0).addBox(-19.0F, 3.0F, 21.0F, 4.0F, 3.0F, 18.0F)
                         .texOffs(256, 0).addBox(15.0F, 3.0F, 21.0F, 4.0F, 3.0F, 18.0F)
@@ -124,16 +119,18 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                 PartPose.ZERO
         );
 
+        // Beacon uses a local pivot at its own center. Keeping absolute cab-space
+        // coordinates in the rotating child made the reflector orbit around the cab.
         PartDefinition beaconBase = cab.addOrReplaceChild(
                 "beacon_base",
                 CubeListBuilder.create()
-                        .texOffs(256, 64).addBox(-2.5F, -36.0F, 26.0F, 5.0F, 3.0F, 5.0F),
-                PartPose.ZERO
+                        .texOffs(256, 64).addBox(-2.5F, -1.5F, -2.5F, 5.0F, 3.0F, 5.0F),
+                PartPose.offset(0.0F, -34.5F, 28.5F)
         );
         beaconBase.addOrReplaceChild(
                 "beacon_reflector",
                 CubeListBuilder.create()
-                        .texOffs(448, 32).addBox(-1.5F, -36.5F, 26.7F, 3.0F, 2.0F, 3.5F),
+                        .texOffs(448, 32).addBox(-1.5F, -2.5F, -1.5F, 3.0F, 2.0F, 3.0F),
                 PartPose.ZERO
         );
 
