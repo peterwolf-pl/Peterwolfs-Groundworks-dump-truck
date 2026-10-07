@@ -406,11 +406,15 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         double localForward = delta.dot(forward);
         double localRight = delta.dot(right);
 
-        return Math.abs(localRight) <= 1.65D
+        // The body is open from above. A bucket does not need to put its
+        // release point physically inside the bed volume: it may pour from several
+        // blocks above as long as the release point projects over the body opening.
+        // Horizontal limits follow the visible dump-bed footprint.
+        return Math.abs(localRight) <= 1.70D
                 && localForward >= -3.35D
-                && localForward <= 0.95D
-                && delta.y >= 0.85D
-                && delta.y <= 3.65D;
+                && localForward <= 1.30D
+                && delta.y >= 0.70D
+                && delta.y <= 8.00D;
     }
 
     /**
