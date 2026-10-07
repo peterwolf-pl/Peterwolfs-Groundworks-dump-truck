@@ -1,17 +1,10 @@
-# Gradle
-.gradle/
+.gradle
 build/
-out/
-
-# IDE
-.idea/
-*.iml
-.vscode/
-
-# Runtime
+bin/
 run/
+out/
 logs/
-visual-tests/
-
-# macOS
+.idea
+*.iml
 .DS_Store
+visual-tests/current/

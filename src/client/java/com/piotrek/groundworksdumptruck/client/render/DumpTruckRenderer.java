@@ -14,7 +14,8 @@ import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 
-public class DumpTruckRenderer extends EntityRenderer<GroundworksDumpTruckEntity, DumpTruckRenderState> {
+public class DumpTruckRenderer
+        extends EntityRenderer<GroundworksDumpTruckEntity, DumpTruckRenderState> {
 
     public static final Identifier TEXTURE =
             GroundworksDumpTruckMod.id("textures/entity/dump_truck.png");
@@ -23,8 +24,10 @@ public class DumpTruckRenderer extends EntityRenderer<GroundworksDumpTruckEntity
 
     public DumpTruckRenderer(EntityRendererProvider.Context context) {
         super(context);
-        this.model = new DumpTruckModel(context.bakeLayer(GroundworksDumpTruckClient.DUMP_TRUCK_LAYER));
-        this.shadowRadius = 2.45F;
+        this.model = new DumpTruckModel(
+                context.bakeLayer(GroundworksDumpTruckClient.DUMP_TRUCK_LAYER)
+        );
+        this.shadowRadius = 2.25F;
     }
 
     @Override
@@ -41,14 +44,25 @@ public class DumpTruckRenderer extends EntityRenderer<GroundworksDumpTruckEntity
         super.extractRenderState(entity, state, partialTick);
 
         state.baseYaw = entity.getYRot(partialTick);
+        state.basePitch = entity.getVehiclePitch();
+        state.baseRoll = entity.getVehicleRoll();
         state.bedAngle = entity.getBedAngle();
-        state.steerAngle = 0.0F;
-        state.wheelRotation = 0.0F;
-        state.beaconSpin = (entity.tickCount + partialTick) * 0.45F;
-
+        state.steerAngle = entity.getSteerAngle();
+        state.forwardSpeed = entity.getForwardSpeed();
+        state.wheelRotation = entity.getWheelRotation();
         state.carriedMaterialId = entity.getCarriedMaterialId();
         state.carriedUnits = entity.getCarriedUnits();
-        state.fillRatio = entity.getFillRatio();
+        state.dirtUnits = entity.getDirtUnits();
+        state.sandUnits = entity.getSandUnits();
+        state.gravelUnits = entity.getGravelUnits();
+        state.cobblestoneUnits = entity.getCobblestoneUnits();
+        state.fillRatio = (float) entity.getCarriedUnits()
+                / (float) GroundworksDumpTruckEntity.BED_CAPACITY;
+        state.engineRunning = entity.isEngineRunning();
+        state.dumping = entity.isDumping();
+
+        state.beaconSpin = (entity.tickCount + partialTick) * 0.70F;
+        state.beaconFlash = state.engineRunning && ((entity.tickCount / 4) % 2 == 0);
     }
 
     @Override
@@ -61,13 +75,21 @@ public class DumpTruckRenderer extends EntityRenderer<GroundworksDumpTruckEntity
         stack.pushPose();
 
         stack.rotateDegrees(Axis.YP, -state.baseYaw);
+
+        if (Math.abs(state.basePitch) > 0.01F) {
+            stack.rotateDegrees(Axis.XP, state.basePitch);
+        }
+        if (Math.abs(state.baseRoll) > 0.01F) {
+            stack.rotateDegrees(Axis.ZP, state.baseRoll);
+        }
+
         stack.scale(-1.0F, -1.0F, 1.0F);
         stack.translate(0.0F, -1.5F, 0.0F);
 
-        this.model.setupAnim(state);
+        model.setupAnim(state);
 
         collector.submitModel(
-                this.model,
+                model,
                 state,
                 stack,
                 RenderTypes.entityCutout(TEXTURE),
@@ -76,7 +98,7 @@ public class DumpTruckRenderer extends EntityRenderer<GroundworksDumpTruckEntity
                 state.outlineColor
         );
 
-        GranularDumpBedContentsRenderer.submit(state, stack, collector);
+        DumpTruckBedLoadRenderer.submit(state, stack, collector);
 
         stack.popPose();
     }

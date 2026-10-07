@@ -1,12 +1,22 @@
 package com.piotrek.groundworksdumptruck.entity;
 
+import com.piotrek.groundworks.api.GroundworksApi;
+import com.piotrek.groundworks.api.container.IMobileWorldGranularContainer;
+import com.piotrek.groundworks.api.deposit.DepositResult;
+import com.piotrek.groundworks.api.material.GranularComposition;
 import com.piotrek.groundworks.api.material.GranularMaterial;
 import com.piotrek.groundworks.api.material.GranularMaterialRegistry;
 import com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod;
+import com.piotrek.groundworksdumptruck.vehicle.DumpTruckMovementController;
+import com.piotrek.groundworksdumptruck.vehicle.ExhaustPuffs;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
@@ -16,214 +26,1050 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.InterpolationHandler;
+import net.minecraft.world.entity.LinearInterpolationHandler;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
-public class GroundworksDumpTruckEntity extends Entity {
+/**
+ * Server-authoritative three-axle 6x4 Groundworks dump truck.
+ *
+ * <p>The body is a real Groundworks granular container. Capacity is exactly
+ * fifteen full Groundworks blocks: 15 x 512 = 7680 integer units. The visual
+ * load mesh reaches the physical bed-wall height at this same threshold; only
+ * material above that brim level is allowed to spill over the sides.</p>
+ */
+public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGranularContainer {
 
-    public static final int UNITS_PER_BLOCK = 8 * 8 * 8;
-    public static final int CAPACITY_BLOCKS = 10;
-    public static final int CAPACITY_UNITS = CAPACITY_BLOCKS * UNITS_PER_BLOCK;
+    public static final int BED_CAPACITY_BLOCKS = 15;
+    public static final int BED_CAPACITY = BED_CAPACITY_BLOCKS * 512;
+
+    // Shared visual/physics brim definition. The loose-load renderer starts at
+    // -3 px and reaches the inside top edge of the bed wall at -22 px when full.
+    /** Cab and stacks move forward so the pipes clear the dump body. */
+    public static final float CAB_SHIFT_Z_PX = 4.0F;
+
+    /** Rear pivot of the dump body. More negative is farther behind the cab. */
+    public static final float BED_PIVOT_Z_PX = -57.0F;
+
+    public static final float BED_LOAD_BASE_Y_PX = -3.0F;
+    public static final float BED_BRIM_Y_PX = -22.0F;
+    public static final float BED_FULL_PILE_RISE_PX =
+            BED_LOAD_BASE_Y_PX - BED_BRIM_Y_PX;
+
     public static final float MAX_BED_ANGLE = 50.0F;
+    public static final float DUMP_THRESHOLD_ANGLE = 18.0F;
+
+    private static final float BED_SPEED = 0.85F;
+    private static final int MAX_DUMP_FLOW_PER_TICK = 160;
+    private static final int DUMP_SURFACE_SEARCH_DEPTH = 16;
 
     private static final EntityDataAccessor<Float> BED_ANGLE =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
-    private static final EntityDataAccessor<Boolean> BED_RAISED =
-            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
-    private static final EntityDataAccessor<Integer> CARRIED_MATERIAL_ID =
-            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Float> STEER_ANGLE =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> FORWARD_SPEED =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> WHEEL_ROTATION =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> VEHICLE_PITCH =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> VEHICLE_ROLL =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+
     private static final EntityDataAccessor<Integer> CARRIED_UNITS =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> CARRIED_MATERIAL_ID =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+
+    private static final EntityDataAccessor<Integer> DIRT_UNITS =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> SAND_UNITS =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> GRAVEL_UNITS =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> COBBLESTONE_UNITS =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
+
+    private static final EntityDataAccessor<Boolean> ENGINE_RUNNING =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Float> ENGINE_LOAD =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Boolean> IS_DUMPING =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
+
+    private final DumpTruckMovementController movementController =
+            new DumpTruckMovementController();
+    private final GranularComposition loadComposition =
+            new GranularComposition();
+
+    private float inputThrottle;
+    private float inputSteer;
+    private float inputBedLift;
+    private int inputFreshTicks;
+    private float bedAngle;
+    private float engineLoad;
+    private boolean overflowSideToggle;
+    private double remoteAdvanceRemaining;
 
     public GroundworksDumpTruckEntity(EntityType<?> type, Level level) {
         super(type, level);
     }
 
     @Override
-    protected void defineSynchedData(SynchedEntityData.Builder builder) {
-        builder.define(BED_ANGLE, 0.0F);
-        builder.define(BED_RAISED, false);
-        builder.define(CARRIED_MATERIAL_ID, 0);
-        builder.define(CARRIED_UNITS, 0);
+    protected InterpolationHandler createInterpolationHandler() {
+        return LinearInterpolationHandler.create(this, 3);
     }
 
     @Override
-    public InteractionResult interact(Player player, InteractionHand hand, Vec3 location) {
-        ItemStack held = player.getItemInHand(hand);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        builder.define(BED_ANGLE, 0.0F);
+        builder.define(STEER_ANGLE, 0.0F);
+        builder.define(FORWARD_SPEED, 0.0F);
+        builder.define(WHEEL_ROTATION, 0.0F);
+        builder.define(VEHICLE_PITCH, 0.0F);
+        builder.define(VEHICLE_ROLL, 0.0F);
 
-        if (!held.isEmpty() && held.getItem() instanceof BlockItem blockItem) {
-            GranularMaterial material =
-                    GranularMaterialRegistry.forBlockState(blockItem.getBlock().defaultBlockState());
+        builder.define(CARRIED_UNITS, 0);
+        builder.define(CARRIED_MATERIAL_ID, 0);
+        builder.define(DIRT_UNITS, 0);
+        builder.define(SAND_UNITS, 0);
+        builder.define(GRAVEL_UNITS, 0);
+        builder.define(COBBLESTONE_UNITS, 0);
 
-            if (material != null && material.id() > 0) {
-                if (!this.level().isClientSide()) {
-                    int accepted = tryAddMaterial(material, UNITS_PER_BLOCK);
-                    if (accepted == UNITS_PER_BLOCK) {
-                        if (!player.getAbilities().instabuild) {
-                            held.shrink(1);
-                        }
-                        this.level().playSound(
-                                null,
-                                this.getX(),
-                                this.getY(),
-                                this.getZ(),
-                                SoundEvents.GRAVEL_PLACE,
-                                SoundSource.BLOCKS,
-                                0.8F,
-                                0.9F
-                        );
-                    }
-                }
-                return InteractionResult.SUCCESS;
-            }
+        builder.define(ENGINE_RUNNING, false);
+        builder.define(ENGINE_LOAD, 0.0F);
+        builder.define(IS_DUMPING, false);
+    }
+
+    public void setControlInputs(float throttle, float steer, float bedLift) {
+        inputThrottle = Mth.clamp(throttle, -1.0F, 1.0F);
+        inputSteer = Mth.clamp(steer, -1.0F, 1.0F);
+        inputBedLift = Mth.clamp(bedLift, -1.0F, 1.0F);
+        inputFreshTicks = 5;
+    }
+
+    @Override
+    public boolean requestAdvance(double blocks) {
+        if (level().isClientSide()
+                || blocks <= 0.0D
+                || getControllingPassenger() != null
+                || remoteAdvanceRemaining > 0.01D) {
+            return false;
         }
 
-        if (player.isSecondaryUseActive() && held.isEmpty()) {
-            if (!this.level().isClientSide()) {
-                setBedRaised(!isBedRaised());
-            }
-            return InteractionResult.SUCCESS;
-        }
+        remoteAdvanceRemaining = Math.clamp(blocks, 0.1D, 4.0D);
+        movementController.stopMotion();
+        inputFreshTicks = 0;
+        return true;
+    }
 
-        if (held.isEmpty()) {
-            if (!this.level().isClientSide() && this.getPassengers().isEmpty()) {
-                player.startRiding(this);
-            }
-            return InteractionResult.SUCCESS;
-        }
-
-        return InteractionResult.PASS;
+    @Override
+    public boolean isAdvanceInProgress() {
+        return remoteAdvanceRemaining > 0.01D;
     }
 
     @Override
     public void tick() {
         super.tick();
 
-        if (this.level().isClientSide()) {
+        if (level().isClientSide()) {
+            spawnExhaustSmoke();
             return;
         }
 
-        float current = getBedAngle();
-        float target = isBedRaised() ? MAX_BED_ANGLE : 0.0F;
-        float step = 1.25F;
+        ServerLevel serverLevel = (ServerLevel) level();
+        Entity driver = getControllingPassenger();
 
-        if (Math.abs(target - current) <= step) {
-            if (current != target) {
-                setBedAngle(target);
+        if (driver instanceof ServerPlayer player) {
+            var vanillaInput = player.getLastClientInput();
+
+            if (inputFreshTicks > 0) {
+                inputFreshTicks--;
+            } else {
+                inputThrottle = vanillaInput.forward() ? 1.0F
+                        : vanillaInput.backward() ? -1.0F : 0.0F;
+                inputSteer = vanillaInput.left() ? -1.0F
+                        : vanillaInput.right() ? 1.0F : 0.0F;
+                inputBedLift = 0.0F;
             }
+
+            if (Math.abs(inputThrottle) < 0.01F) {
+                if (vanillaInput.forward()) inputThrottle = 1.0F;
+                else if (vanillaInput.backward()) inputThrottle = -1.0F;
+            }
+
+            if (Math.abs(inputSteer) < 0.01F) {
+                if (vanillaInput.left()) inputSteer = -1.0F;
+                else if (vanillaInput.right()) inputSteer = 1.0F;
+            }
+        } else if (remoteAdvanceRemaining > 0.01D) {
+            inputThrottle = 0.65F;
+            inputSteer = 0.0F;
+            inputBedLift = 0.0F;
+            inputFreshTicks = 0;
         } else {
-            setBedAngle(current + Math.copySign(step, target - current));
-        }
-    }
-
-    public int tryAddMaterial(GranularMaterial material, int requestedUnits) {
-        if (material == null || material.id() <= 0 || requestedUnits <= 0) {
-            return 0;
+            inputThrottle = 0.0F;
+            inputSteer = 0.0F;
+            inputBedLift = 0.0F;
+            inputFreshTicks = 0;
         }
 
-        int currentUnits = getCarriedUnits();
-        int currentMaterial = getCarriedMaterialId();
+        boolean engineRunning = driver != null || remoteAdvanceRemaining > 0.01D;
+        entityData.set(ENGINE_RUNNING, engineRunning);
 
-        if (currentUnits > 0 && currentMaterial != material.id()) {
-            return 0;
+        float fillRatio = (float) storedUnits() / (float) BED_CAPACITY;
+        float driveDemand = Math.abs(inputThrottle) * (0.68F + 0.22F * fillRatio);
+        float steerDemand = Math.abs(inputSteer) * 0.30F;
+        float hydraulicDemand = Math.abs(inputBedLift) * 0.88F;
+        float remoteDemand = remoteAdvanceRemaining > 0.01D ? 0.58F + 0.20F * fillRatio : 0.0F;
+        float targetEngineLoad = engineRunning
+                ? Mth.clamp(0.14F + Math.max(
+                        Math.max(driveDemand, steerDemand),
+                        Math.max(hydraulicDemand, remoteDemand)
+                ), 0.0F, 1.0F)
+                : 0.0F;
+        engineLoad += (targetEngineLoad - engineLoad) * 0.18F;
+        entityData.set(ENGINE_LOAD, engineLoad);
+
+        bedAngle = Mth.clamp(
+                bedAngle + inputBedLift * BED_SPEED,
+                0.0F,
+                MAX_BED_ANGLE
+        );
+
+        DumpTruckMovementController.StepResult moveResult =
+                movementController.step(inputThrottle, inputSteer);
+
+        if (Math.abs(moveResult.deltaYaw()) > 0.001F) {
+            setYRot(Mth.wrapDegrees(getYRot() + moveResult.deltaYaw()));
+            setYHeadRot(getYRot());
+            setYBodyRot(getYRot());
         }
 
-        int accepted = Math.min(requestedUnits, CAPACITY_UNITS - currentUnits);
-        if (accepted <= 0) {
-            return 0;
+        movementController.updateTerrainOrientation(
+                serverLevel,
+                position(),
+                getYRot()
+        );
+
+        double targetGroundY =
+                movementController.getAverageGroundY(
+                        serverLevel,
+                        position(),
+                        getYRot()
+                );
+
+        float speed = moveResult.forwardSpeed();
+        if (remoteAdvanceRemaining > 0.01D) {
+            speed = (float) Math.min(speed, remoteAdvanceRemaining);
         }
 
-        this.entityData.set(CARRIED_MATERIAL_ID, material.id());
-        this.entityData.set(CARRIED_UNITS, currentUnits + accepted);
-        return accepted;
-    }
+        float yawRad = (float) Math.toRadians(getYRot());
+        double dx = -Math.sin(yawRad) * speed;
+        double dz = Math.cos(yawRad) * speed;
 
-    public int removeMaterial(int requestedUnits) {
-        if (requestedUnits <= 0) {
-            return 0;
+        double heightDiff = targetGroundY - getY();
+        double dy;
+
+        if (heightDiff > 0.03D) {
+            dy = Math.min(
+                    heightDiff,
+                    Math.max(0.07D, Math.abs(speed) * 0.62D)
+            );
+        } else if (heightDiff < -0.05D) {
+            dy = Math.max(
+                    heightDiff,
+                    onGround() ? -0.22D : -0.08D
+            );
+        } else {
+            dy = onGround() ? 0.0D : -0.08D;
         }
 
-        int current = getCarriedUnits();
-        int removed = Math.min(requestedUnits, current);
-        int remaining = current - removed;
+        Vec3 beforeMove = position();
+        move(MoverType.SELF, new Vec3(dx, dy, dz));
 
-        this.entityData.set(CARRIED_UNITS, remaining);
-        if (remaining <= 0) {
-            this.entityData.set(CARRIED_MATERIAL_ID, 0);
+        if (remoteAdvanceRemaining > 0.01D) {
+            Vec3 moved = position().subtract(beforeMove);
+            double horizontal = Math.sqrt(moved.x * moved.x + moved.z * moved.z);
+            remoteAdvanceRemaining = Math.max(0.0D, remoteAdvanceRemaining - horizontal);
+
+            if (remoteAdvanceRemaining <= 0.01D) {
+                remoteAdvanceRemaining = 0.0D;
+                movementController.stopMotion();
+                inputThrottle = 0.0F;
+            } else if (horizontal < 0.001D) {
+                // A blocked truck must not report the remote move as complete.
+                // Keep the remaining distance pending so the excavator waits.
+                movementController.stopMotion();
+                inputThrottle = 0.0F;
+            }
         }
-        return removed;
-    }
 
-    public float getBedAngle() {
-        return this.entityData.get(BED_ANGLE);
-    }
+        boolean dumping = tickDumping(serverLevel);
 
-    public void setBedAngle(float angle) {
-        this.entityData.set(BED_ANGLE, Mth.clamp(angle, 0.0F, MAX_BED_ANGLE));
-    }
+        entityData.set(BED_ANGLE, bedAngle);
+        entityData.set(STEER_ANGLE, moveResult.steerAngle());
+        entityData.set(FORWARD_SPEED, speed);
+        entityData.set(WHEEL_ROTATION, moveResult.wheelRotation());
+        entityData.set(VEHICLE_PITCH, movementController.vehiclePitch());
+        entityData.set(VEHICLE_ROLL, movementController.vehicleRoll());
+        entityData.set(IS_DUMPING, dumping);
 
-    public boolean isBedRaised() {
-        return this.entityData.get(BED_RAISED);
-    }
-
-    public void setBedRaised(boolean raised) {
-        this.entityData.set(BED_RAISED, raised);
-    }
-
-    public int getCarriedMaterialId() {
-        return this.entityData.get(CARRIED_MATERIAL_ID);
-    }
-
-    public GranularMaterial getCarriedMaterial() {
-        return GranularMaterialRegistry.byId(getCarriedMaterialId());
-    }
-
-    public int getCarriedUnits() {
-        return this.entityData.get(CARRIED_UNITS);
-    }
-
-    public float getFillRatio() {
-        return (float) getCarriedUnits() / (float) CAPACITY_UNITS;
+        syncLoadData();
     }
 
     @Override
-    public Vec3 getPassengerRidingPosition(Entity passenger) {
-        return this.position().add(
-                this.getPassengerAttachmentPoint(passenger, this.getDimensions(this.getPose()), 1.0F)
+    public int capacity() {
+        return BED_CAPACITY;
+    }
+
+    @Override
+    public int storedUnits() {
+        return loadComposition.totalUnits();
+    }
+
+    @Override
+    public GranularMaterial storedMaterial() {
+        int id = loadComposition.dominantMaterialId();
+        return id > 0
+                ? GranularMaterialRegistry.byId(id)
+                : GranularMaterial.EMPTY;
+    }
+
+    @Override
+    public GranularComposition storedComposition() {
+        return loadComposition.copy();
+    }
+
+    @Override
+    public int acceptMaterial(
+            GranularMaterial material,
+            int units
+    ) {
+        if (units <= 0
+                || material == null
+                || material == GranularMaterial.EMPTY) {
+            return 0;
+        }
+
+        int room = BED_CAPACITY - loadComposition.totalUnits();
+        int accepted = Math.min(units, Math.max(0, room));
+
+        if (accepted > 0) {
+            loadComposition.add(material, accepted);
+            syncLoadData();
+        }
+
+        return accepted;
+    }
+
+    @Override
+    public int acceptComposition(GranularComposition composition) {
+        if (composition == null
+                || composition.isEmpty()
+                || !hasRoom()) {
+            return 0;
+        }
+
+        int room = BED_CAPACITY - loadComposition.totalUnits();
+        GranularComposition accepted = composition.copy();
+
+        if (accepted.totalUnits() > room) {
+            accepted = accepted.extractProportional(room);
+        }
+
+        int added = loadComposition.addAll(accepted);
+        syncLoadData();
+        return added;
+    }
+
+    @Override
+    public int extractMaterial(int maxUnits) {
+        if (maxUnits <= 0 || loadComposition.isEmpty()) {
+            return 0;
+        }
+
+        int selected = loadComposition.dominantMaterialId();
+        int removed = loadComposition.remove(selected, maxUnits);
+
+        if (removed > 0) {
+            syncLoadData();
+        }
+
+        return removed;
+    }
+
+    @Override
+    public GranularComposition extractComposition(int maxUnits) {
+        GranularComposition extracted =
+                loadComposition.extractProportional(maxUnits);
+
+        if (!extracted.isEmpty()) {
+            syncLoadData();
+        }
+
+        return extracted;
+    }
+
+    @Override
+    public boolean canReceiveAt(Vec3 worldPoint) {
+        if (bedAngle > 12.0F) {
+            return false;
+        }
+
+        Vec3 delta = worldPoint.subtract(position());
+        double yawRad = Math.toRadians(getYRot());
+
+        Vec3 forward = new Vec3(
+                -Math.sin(yawRad),
+                0.0D,
+                Math.cos(yawRad)
+        );
+        Vec3 right = new Vec3(
+                Math.cos(yawRad),
+                0.0D,
+                Math.sin(yawRad)
+        );
+
+        double localForward = delta.dot(forward);
+        double localRight = delta.dot(right);
+
+        // The body is open from above. A bucket does not need to put its
+        // release point physically inside the bed volume: it may pour from several
+        // blocks above as long as the release point projects over the body opening.
+        // Horizontal limits follow the visible dump-bed footprint.
+        return Math.abs(localRight) <= 1.70D
+                && localForward >= -3.98D
+                && localForward <= 0.70D
+                && delta.y >= 0.70D
+                && delta.y <= 8.00D;
+    }
+
+    /**
+     * Fill the body until the generated loose-material pile reaches the physical
+     * bed brim. BED_CAPACITY is calibrated to that same renderer threshold.
+     * Only material above the brim is allowed to fall over the left/right side
+     * and become normal Groundworks terrain.
+     */
+    @Override
+    public int receiveMaterialAt(
+            ServerLevel level,
+            Vec3 worldPoint,
+            GranularMaterial material,
+            int units
+    ) {
+        if (units <= 0
+                || material == null
+                || material == GranularMaterial.EMPTY) {
+            return 0;
+        }
+
+        int accepted = acceptMaterial(material, units);
+        int overflow = units - accepted;
+
+        if (overflow <= 0) {
+            return accepted;
+        }
+
+        int spilled = spillOverflowToSides(
+                level,
+                material,
+                overflow
+        );
+
+        if (spilled > 0) {
+            spawnOverflowParticles(
+                    level,
+                    material,
+                    spilled
+            );
+        }
+
+        return accepted + spilled;
+    }
+
+    private int spillOverflowToSides(
+            ServerLevel level,
+            GranularMaterial material,
+            int units
+    ) {
+        int remaining = units;
+        int depositedTotal = 0;
+
+        Vec3 forward = forwardVector();
+        Vec3 right = rightVector();
+
+        // Alternate first side each call so a continuous overfill grows both
+        // piles instead of always favoring one side.
+        boolean startRight = overflowSideToggle;
+        overflowSideToggle = !overflowSideToggle;
+
+        for (int pass = 0; pass < 6 && remaining > 0; pass++) {
+            boolean rightSide = ((pass & 1) == 0)
+                    ? startRight
+                    : !startRight;
+
+            double side = rightSide ? 2.15D : -2.15D;
+            double longitudinal =
+                    -1.375D - ((pass / 2) * 0.75D);
+
+            Vec3 spillPoint = position()
+                    .add(forward.scale(longitudinal))
+                    .add(right.scale(side))
+                    .add(0.0D, 1.15D, 0.0D);
+
+            BlockPos target =
+                    findDepositSurface(level, spillPoint);
+
+            if (target == null) {
+                continue;
+            }
+
+            int request = Math.min(remaining, 256);
+            DepositResult result =
+                    GroundworksApi.depositWithOverflow(
+                            level,
+                            target,
+                            material,
+                            request
+                    );
+
+            int deposited = result.unitsDeposited();
+            depositedTotal += deposited;
+            remaining -= deposited;
+
+            for (BlockPos affected : result.affectedCells()) {
+                GroundworksApi.markForSimulation(level, affected);
+            }
+        }
+
+        return depositedTotal;
+    }
+
+    private boolean tickDumping(ServerLevel level) {
+        if (bedAngle <= DUMP_THRESHOLD_ANGLE
+                || loadComposition.isEmpty()) {
+            return false;
+        }
+
+        float progress = Mth.clamp(
+                (bedAngle - DUMP_THRESHOLD_ANGLE)
+                        / (MAX_BED_ANGLE - DUMP_THRESHOLD_ANGLE),
+                0.0F,
+                1.0F
+        );
+
+        int flowRate = Math.round(
+                Mth.lerp(
+                        progress,
+                        24.0F,
+                        (float) MAX_DUMP_FLOW_PER_TICK
+                )
+        );
+
+        int toDump = Math.min(
+                loadComposition.totalUnits(),
+                flowRate
+        );
+
+        if (toDump <= 0) {
+            return false;
+        }
+
+        Vec3 lip = getDumpLipWorldPosition();
+        BlockPos target = findDepositSurface(level, lip);
+
+        if (target == null) {
+            return false;
+        }
+
+        GranularComposition outgoing =
+                loadComposition.extractProportional(toDump);
+
+        int[] counts = outgoing.toArray();
+        int depositedTotal = 0;
+        GranularMaterial particleMaterial =
+                GranularMaterial.EMPTY;
+
+        for (int id = 1; id < counts.length; id++) {
+            int requested = counts[id];
+            if (requested <= 0) {
+                continue;
+            }
+
+            GranularMaterial material =
+                    GranularMaterialRegistry.byId(id);
+
+            if (material == GranularMaterial.EMPTY) {
+                loadComposition.add(id, requested);
+                continue;
+            }
+
+            DepositResult result =
+                    GroundworksApi.depositWithOverflow(
+                            level,
+                            target,
+                            material,
+                            requested
+                    );
+
+            int deposited = result.unitsDeposited();
+            depositedTotal += deposited;
+
+            if (particleMaterial == GranularMaterial.EMPTY
+                    && deposited > 0) {
+                particleMaterial = material;
+            }
+
+            if (deposited < requested) {
+                loadComposition.add(
+                        id,
+                        requested - deposited
+                );
+            }
+
+            for (BlockPos affected : result.affectedCells()) {
+                GroundworksApi.markForSimulation(
+                        level,
+                        affected
+                );
+            }
+        }
+
+        syncLoadData();
+
+        if (depositedTotal <= 0) {
+            return false;
+        }
+
+        spawnDumpParticles(
+                level,
+                lip,
+                particleMaterial,
+                depositedTotal
+        );
+
+        if (tickCount % 5 == 0) {
+            level.playSound(
+                    null,
+                    lip.x,
+                    lip.y,
+                    lip.z,
+                    SoundEvents.GRAVEL_PLACE,
+                    SoundSource.BLOCKS,
+                    0.85F,
+                    0.90F
+                            + level.getRandom().nextFloat() * 0.15F
+            );
+        }
+
+        return true;
+    }
+
+    private Vec3 getDumpLipWorldPosition() {
+        Vec3 forward = forwardVector();
+
+        double angleRad = Math.toRadians(bedAngle);
+        double rearOffset =
+                3.675D + Math.cos(angleRad) * 0.20D;
+        double lift =
+                0.95D + Math.sin(angleRad) * 0.80D;
+
+        return position()
+                .add(forward.scale(-rearOffset))
+                .add(0.0D, lift, 0.0D);
+    }
+
+    @Nullable
+    private static BlockPos findDepositSurface(
+            ServerLevel level,
+            Vec3 point
+    ) {
+        BlockPos start =
+                BlockPos.containing(point.x, point.y, point.z);
+
+        int minY = Math.max(
+                level.getMinY(),
+                start.getY() - DUMP_SURFACE_SEARCH_DEPTH
+        );
+
+        for (int y = start.getY(); y >= minY; y--) {
+            BlockPos check =
+                    new BlockPos(start.getX(), y, start.getZ());
+
+            GranularMaterial terrainMaterial =
+                    GroundworksApi.getMaterial(level, check);
+
+            if (terrainMaterial != null
+                    && terrainMaterial != GranularMaterial.EMPTY) {
+                return check;
+            }
+
+            BlockState state =
+                    level.getBlockState(check);
+
+            if (!state.isAir()) {
+                return check.above();
+            }
+        }
+
+        return null;
+    }
+
+    private void spawnOverflowParticles(
+            ServerLevel level,
+            GranularMaterial material,
+            int units
+    ) {
+        // Emit overflow from the actual upper side-rail region, not from the
+        // middle of the truck body. This makes the visible stream start where a
+        // real heaped load crosses the wall height.
+        Vec3 left = position()
+                .add(rightVector().scale(-1.28D))
+                .add(forwardVector().scale(-1.775D))
+                .add(0.0D, 2.72D, 0.0D);
+
+        Vec3 right = position()
+                .add(rightVector().scale(1.28D))
+                .add(forwardVector().scale(-1.775D))
+                .add(0.0D, 2.72D, 0.0D);
+
+        spawnDumpParticles(
+                level,
+                left,
+                material,
+                Math.max(1, units / 2)
+        );
+
+        spawnDumpParticles(
+                level,
+                right,
+                material,
+                Math.max(1, units / 2)
+        );
+    }
+
+    private static void spawnDumpParticles(
+            ServerLevel level,
+            Vec3 origin,
+            GranularMaterial material,
+            int units
+    ) {
+        var block = material != null
+                && material.sourceBlock() != null
+                ? material.sourceBlock()
+                : Blocks.DIRT;
+
+        BlockParticleOption particle =
+                new BlockParticleOption(
+                        ParticleTypes.BLOCK,
+                        block.defaultBlockState()
+                );
+
+        int count = Mth.clamp(units / 8, 4, 24);
+
+        level.sendParticles(
+                particle,
+                origin.x,
+                origin.y,
+                origin.z,
+                count,
+                0.32D,
+                0.22D,
+                0.32D,
+                0.07D
+        );
+    }
+
+    /**
+     * Mouth centers in cab-local pixels. The cab part offset is applied
+     * by the same matrix as the renderer, so these stay on the lip boxes.
+     */
+    public static final float EXHAUST_LEFT_X_PX = -15.5F;
+    public static final float EXHAUST_RIGHT_X_PX = 15.5F;
+    public static final float EXHAUST_TIP_Y_PX = -43.4F;
+    public static final float EXHAUST_TIP_Z_PX = 15.9F;
+
+    private void spawnExhaustSmoke() {
+        if (!isEngineRunning()) {
+            return;
+        }
+
+        float load = getEngineLoad();
+        spawnLightExhaustPuffs(load, exhaustTip(EXHAUST_LEFT_X_PX));
+        spawnLightExhaustPuffs(load, exhaustTip(EXHAUST_RIGHT_X_PX));
+
+        if (load <= 0.30F) {
+            return;
+        }
+
+        emitLoadedSmoke(exhaustTip(EXHAUST_LEFT_X_PX), load);
+        emitLoadedSmoke(exhaustTip(EXHAUST_RIGHT_X_PX), load);
+    }
+
+    private void spawnLightExhaustPuffs(float load, Vec3 exhaustPos) {
+        int count = ExhaustPuffs.whitePuffCount(load, tickCount);
+        if (count == 0) {
+            return;
+        }
+
+        float blend = (load - ExhaustPuffs.MIN_LOAD)
+                / (ExhaustPuffs.MAX_LOAD - ExhaustPuffs.MIN_LOAD);
+        double spread = 0.004D + 0.010D * blend;
+        double rise = 0.010D + 0.012D * blend;
+        for (int i = 0; i < count; i++) {
+            level().addParticle(
+                    ParticleTypes.WHITE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.08D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * spread,
+                    rise + Math.random() * 0.008D,
+                    (Math.random() - 0.5D) * spread
+            );
+        }
+    }
+
+    private void emitLoadedSmoke(Vec3 exhaustPos, float load) {
+        if (load >= 0.95F) {
+            level().addParticle(
+                    ParticleTypes.LARGE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.03D,
+                    0.08D + Math.random() * 0.04D,
+                    (Math.random() - 0.5D) * 0.03D
+            );
+            level().addParticle(
+                    ParticleTypes.SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.02D,
+                    0.06D,
+                    (Math.random() - 0.5D) * 0.02D
+            );
+            return;
+        }
+
+        if (load > 0.60F) {
+            if (tickCount % 2 == 0) {
+                level().addParticle(
+                        ParticleTypes.SMOKE,
+                        exhaustPos.x,
+                        exhaustPos.y + 0.05D,
+                        exhaustPos.z,
+                        (Math.random() - 0.5D) * 0.02D,
+                        0.05D + Math.random() * 0.02D,
+                        (Math.random() - 0.5D) * 0.02D
+                );
+            }
+            return;
+        }
+
+        if (tickCount % 4 == 0) {
+            level().addParticle(
+                    ParticleTypes.WHITE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.01D,
+                    0.04D,
+                    (Math.random() - 0.5D) * 0.01D
+            );
+        }
+    }
+
+    /** Stack mouth in world space. Same transform chain as DumpTruckRenderer. */
+    public Vec3 exhaustTip(float modelXPx) {
+        Matrix4f mat = new Matrix4f();
+        Vec3 base = position();
+        mat.translate((float) base.x, (float) base.y, (float) base.z);
+        mat.rotate((float) Math.toRadians(-getYRot()), 0.0F, 1.0F, 0.0F);
+
+        float pitch = getVehiclePitch();
+        float roll = getVehicleRoll();
+        if (Math.abs(pitch) > 0.01F) {
+            mat.rotate((float) Math.toRadians(pitch), 1.0F, 0.0F, 0.0F);
+        }
+        if (Math.abs(roll) > 0.01F) {
+            mat.rotate((float) Math.toRadians(roll), 0.0F, 0.0F, 1.0F);
+        }
+
+        mat.scale(-1.0F, -1.0F, 1.0F);
+        mat.translate(0.0F, -1.5F, 0.0F);
+        mat.translate(0.0F, 0.0F, CAB_SHIFT_Z_PX / 16.0F);
+
+        Vector4f mouth = new Vector4f(
+                modelXPx / 16.0F,
+                EXHAUST_TIP_Y_PX / 16.0F,
+                EXHAUST_TIP_Z_PX / 16.0F,
+                1.0F
+        );
+        mat.transform(mouth);
+        return new Vec3(mouth.x, mouth.y, mouth.z);
+    }
+
+    private Vec3 forwardVector() {
+        double yawRad = Math.toRadians(getYRot());
+        return new Vec3(
+                -Math.sin(yawRad),
+                0.0D,
+                Math.cos(yawRad)
+        );
+    }
+
+    private Vec3 rightVector() {
+        double yawRad = Math.toRadians(getYRot());
+        return new Vec3(
+                Math.cos(yawRad),
+                0.0D,
+                Math.sin(yawRad)
+        );
+    }
+
+    private void syncLoadData() {
+        int total = loadComposition.totalUnits();
+        int dominantId =
+                loadComposition.dominantMaterialId();
+
+        entityData.set(
+                CARRIED_UNITS,
+                Mth.clamp(total, 0, BED_CAPACITY)
+        );
+        entityData.set(
+                CARRIED_MATERIAL_ID,
+                Math.max(0, dominantId)
+        );
+
+        entityData.set(
+                DIRT_UNITS,
+                loadComposition.unitsOf(
+                        GranularMaterialRegistry.DIRT
+                )
+        );
+        entityData.set(
+                SAND_UNITS,
+                loadComposition.unitsOf(
+                        GranularMaterialRegistry.SAND
+                )
+        );
+        entityData.set(
+                GRAVEL_UNITS,
+                loadComposition.unitsOf(
+                        GranularMaterialRegistry.GRAVEL
+                )
+        );
+        entityData.set(
+                COBBLESTONE_UNITS,
+                loadComposition.unitsOf(
+                        GranularMaterialRegistry.COBBLESTONE
+                )
         );
     }
 
     @Override
-    protected Vec3 getPassengerAttachmentPoint(Entity passenger, EntityDimensions dimensions, float scale) {
-        double yawRad = Math.toRadians(this.getYRot());
-        Vec3 forward = new Vec3(-Math.sin(yawRad), 0.0D, Math.cos(yawRad));
-        return forward.scale(2.20D).add(0.0D, 1.65D, 0.0D);
+    public InteractionResult interact(
+            Player player,
+            InteractionHand hand,
+            Vec3 location
+    ) {
+        if (player.isSecondaryUseActive()
+                && player.getItemInHand(hand).isEmpty()) {
+
+            // A loaded truck cannot be converted back into an item because that
+            // would destroy the physical cargo.
+            if (!isEmpty()) {
+                return InteractionResult.FAIL;
+            }
+
+            if (!level().isClientSide()
+                    && getPassengers().isEmpty()) {
+
+                if (!player.getAbilities().instabuild) {
+                    player.getInventory().add(
+                            new ItemStack(
+                                    GroundworksDumpTruckMod.DUMP_TRUCK_ITEM
+                            )
+                    );
+                }
+
+                level().playSound(
+                        null,
+                        getX(),
+                        getY(),
+                        getZ(),
+                        SoundEvents.ITEM_PICKUP,
+                        SoundSource.PLAYERS,
+                        1.0F,
+                        1.0F
+                );
+
+                discard();
+            }
+
+            return InteractionResult.SUCCESS;
+        }
+
+        if (!player.isSecondaryUseActive()
+                && !level().isClientSide()
+                && getPassengers().isEmpty()) {
+            player.startRiding(this);
+        }
+
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    public Vec3 getDismountLocationForPassenger(LivingEntity passenger) {
-        double yawRad = Math.toRadians(this.getYRot());
-        Vec3 left = new Vec3(-Math.cos(yawRad), 0.0D, -Math.sin(yawRad));
-        return this.position().add(left.scale(2.25D)).add(0.0D, 0.20D, 0.0D);
+    public Vec3 getPassengerRidingPosition(Entity passenger) {
+        return position().add(
+                getPassengerAttachmentPoint(
+                        passenger,
+                        getDimensions(getPose()),
+                        1.0F
+                )
+        );
     }
 
     @Override
-    protected boolean canAddPassenger(Entity passenger) {
-        return passenger instanceof LivingEntity && this.getPassengers().isEmpty();
+    protected Vec3 getPassengerAttachmentPoint(
+            Entity passenger,
+            EntityDimensions dimensions,
+            float scale
+    ) {
+        Vec3 forward = forwardVector();
+        Vec3 right = rightVector();
+
+        // Seat model X is -6.5 px. The renderer mirrors X, so that cushion
+        // appears on the driver's left. rightVector() points to that same side
+        // (east when the truck faces south), so the rider offset is positive.
+        return forward.scale(2.21875D)
+                .add(right.scale(0.40625D))
+                .add(0.0D, 1.88D, 0.0D);
     }
 
     @Override
-    @Nullable
-    public LivingEntity getControllingPassenger() {
-        Entity first = this.getFirstPassenger();
-        return first instanceof LivingEntity living ? living : null;
+    public Vec3 getDismountLocationForPassenger(
+            LivingEntity passenger
+    ) {
+        Vec3 left = rightVector().scale(-1.0D);
+
+        return position()
+                .add(left.scale(2.25D))
+                .add(0.0D, 0.20D, 0.0D);
     }
 
     @Override
@@ -232,16 +1078,20 @@ public class GroundworksDumpTruckEntity extends Entity {
     }
 
     @Override
-    public boolean hurtServer(ServerLevel level, DamageSource source, float amount) {
-        if (this.isInvulnerableToBase(source)) {
+    public boolean hurtServer(
+            ServerLevel level,
+            DamageSource source,
+            float amount
+    ) {
+        if (isInvulnerableToBase(source)) {
             return false;
         }
 
         level.playSound(
                 null,
-                this.getX(),
-                this.getY(),
-                this.getZ(),
+                getX(),
+                getY(),
+                getZ(),
                 SoundEvents.ANVIL_HIT,
                 SoundSource.PLAYERS,
                 0.8F,
@@ -249,38 +1099,166 @@ public class GroundworksDumpTruckEntity extends Entity {
         );
 
         if (source.getEntity() instanceof Player player) {
-            if (!player.getAbilities().instabuild) {
-                this.spawnAtLocation(level, GroundworksDumpTruckMod.DUMP_TRUCK_ITEM);
+            // Do not allow breaking a loaded truck and silently deleting cargo.
+            if (!isEmpty()) {
+                return false;
             }
-            this.discard();
+
+            if (!player.getAbilities().instabuild) {
+                spawnAtLocation(
+                        level,
+                        GroundworksDumpTruckMod.DUMP_TRUCK_ITEM
+                );
+            }
+
+            discard();
             return true;
         }
+
         return false;
     }
 
     @Override
     protected void readAdditionalSaveData(ValueInput input) {
-        setBedAngle(input.getFloatOr("BedAngle", 0.0F));
-        setBedRaised(input.getIntOr("BedRaised", getBedAngle() > MAX_BED_ANGLE * 0.5F ? 1 : 0) != 0);
+        DumpTruckState state =
+                DumpTruckState.load(input);
 
-        int materialId = Math.max(0, input.getIntOr("CarriedMaterialId", 0));
-        int units = Math.clamp(input.getIntOr("CarriedUnits", 0), 0, CAPACITY_UNITS);
+        bedAngle = state.bedAngle();
 
-        this.entityData.set(CARRIED_MATERIAL_ID, units > 0 ? materialId : 0);
-        this.entityData.set(CARRIED_UNITS, units);
+        movementController.setSteerAngle(
+                state.steerAngle()
+        );
+        movementController.setForwardSpeed(
+                state.forwardSpeed()
+        );
+        movementController.setWheelRotation(
+                state.wheelRotation()
+        );
+        movementController.setOrientation(
+                state.vehiclePitch(),
+                state.vehicleRoll()
+        );
+
+        loadComposition.replaceWith(
+                state.materialUnits()
+        );
+
+        if (loadComposition.totalUnits() > BED_CAPACITY) {
+            GranularComposition trimmed =
+                    loadComposition.extractProportional(
+                            BED_CAPACITY
+                    );
+            loadComposition.replaceWith(trimmed.toArray());
+        }
+
+        entityData.set(
+                BED_ANGLE,
+                state.bedAngle()
+        );
+        entityData.set(
+                STEER_ANGLE,
+                state.steerAngle()
+        );
+        entityData.set(
+                FORWARD_SPEED,
+                state.forwardSpeed()
+        );
+        entityData.set(
+                WHEEL_ROTATION,
+                state.wheelRotation()
+        );
+        entityData.set(
+                VEHICLE_PITCH,
+                state.vehiclePitch()
+        );
+        entityData.set(
+                VEHICLE_ROLL,
+                state.vehicleRoll()
+        );
+
+        syncLoadData();
     }
 
     @Override
     protected void addAdditionalSaveData(ValueOutput output) {
-        output.putFloat("BedAngle", getBedAngle());
-        output.putInt("BedRaised", isBedRaised() ? 1 : 0);
-        output.putInt("CarriedMaterialId", getCarriedMaterialId());
-        output.putInt("CarriedUnits", getCarriedUnits());
+        new DumpTruckState(
+                bedAngle,
+                movementController.steerAngle(),
+                movementController.forwardSpeed(),
+                movementController.wheelRotation(),
+                movementController.vehiclePitch(),
+                movementController.vehicleRoll(),
+                loadComposition.toArray()
+        ).save(output);
+    }
+
+    public float getBedAngle() {
+        return entityData.get(BED_ANGLE);
+    }
+
+    public float getSteerAngle() {
+        return entityData.get(STEER_ANGLE);
+    }
+
+    public float getForwardSpeed() {
+        return entityData.get(FORWARD_SPEED);
+    }
+
+    public float getWheelRotation() {
+        return entityData.get(WHEEL_ROTATION);
+    }
+
+    public float getVehiclePitch() {
+        return entityData.get(VEHICLE_PITCH);
+    }
+
+    public float getVehicleRoll() {
+        return entityData.get(VEHICLE_ROLL);
+    }
+
+    public int getCarriedUnits() {
+        return entityData.get(CARRIED_UNITS);
+    }
+
+    public int getCarriedMaterialId() {
+        return entityData.get(CARRIED_MATERIAL_ID);
+    }
+
+    public int getDirtUnits() {
+        return entityData.get(DIRT_UNITS);
+    }
+
+    public int getSandUnits() {
+        return entityData.get(SAND_UNITS);
+    }
+
+    public int getGravelUnits() {
+        return entityData.get(GRAVEL_UNITS);
+    }
+
+    public int getCobblestoneUnits() {
+        return entityData.get(COBBLESTONE_UNITS);
+    }
+
+    public boolean isEngineRunning() {
+        return entityData.get(ENGINE_RUNNING);
+    }
+
+    public float getEngineLoad() {
+        return entityData.get(ENGINE_LOAD);
+    }
+
+    public float getFillRatio() {
+        return (float) getCarriedUnits() / (float) BED_CAPACITY;
+    }
+
+    public boolean isDumping() {
+        return entityData.get(IS_DUMPING);
     }
 
     @Override
     public boolean isPickable() {
-        return !this.isRemoved();
+        return !isRemoved();
     }
 
     @Override
@@ -290,7 +1268,7 @@ public class GroundworksDumpTruckEntity extends Entity {
 
     @Override
     public boolean canBeCollidedWith(@Nullable Entity other) {
-        return other != null && !this.hasPassenger(other);
+        return other != null && !hasPassenger(other);
     }
 
     @Override
@@ -306,5 +1284,30 @@ public class GroundworksDumpTruckEntity extends Entity {
     @Override
     protected boolean isLocalClientAuthoritative() {
         return false;
+    }
+
+    @Override
+    public float maxUpStep() {
+        return 0.40F;
+    }
+
+    @Override
+    protected boolean canAddPassenger(Entity passenger) {
+        return passenger instanceof LivingEntity
+                && getPassengers().isEmpty();
+    }
+
+    @Override
+    @Nullable
+    public LivingEntity getControllingPassenger() {
+        Entity first = getFirstPassenger();
+        return first instanceof LivingEntity living
+                ? living
+                : null;
+    }
+
+    public boolean isDriver(Entity entity) {
+        return entity != null
+                && entity == getControllingPassenger();
     }
 }

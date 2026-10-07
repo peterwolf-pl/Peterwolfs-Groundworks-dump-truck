@@ -2,13 +2,18 @@ package com.piotrek.groundworksdumptruck;
 
 import com.piotrek.groundworksdumptruck.entity.GroundworksDumpTruckEntity;
 import com.piotrek.groundworksdumptruck.item.DumpTruckItem;
+import com.piotrek.groundworksdumptruck.network.DumpTruckInputPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.CreativeModeTab;
@@ -17,7 +22,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class GroundworksDumpTruckMod implements ModInitializer {
-
     public static final String MOD_ID = "pw_groundworks_dump_truck";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
@@ -32,9 +36,22 @@ public class GroundworksDumpTruckMod implements ModInitializer {
             BuiltInRegistries.ENTITY_TYPE,
             DUMP_TRUCK_KEY,
             EntityType.Builder.of(GroundworksDumpTruckEntity::new, MobCategory.MISC)
-                    .sized(3.0F, 3.25F)
+                    .sized(3.35F, 3.0F)
                     .clientTrackingRange(12)
                     .build(DUMP_TRUCK_KEY)
+    );
+
+    public static final SoundEvent ENGINE_LOOP = Registry.register(
+            BuiltInRegistries.SOUND_EVENT,
+            id("engine_loop"),
+            SoundEvent.createFixedRangeEvent(id("engine_loop"), 48.0F)
+    );
+
+    /** Heavier exhaust layer. No subtitle, so it does not double the idle caption. */
+    public static final SoundEvent ENGINE_LOAD = Registry.register(
+            BuiltInRegistries.SOUND_EVENT,
+            id("engine_load"),
+            SoundEvent.createFixedRangeEvent(id("engine_load"), 48.0F)
     );
 
     public static final ResourceKey<Item> DUMP_TRUCK_ITEM_KEY =
@@ -53,10 +70,24 @@ public class GroundworksDumpTruckMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("Initializing Peterwolf's Groundworks Dump Truck for MC 26.3");
+        LOGGER.info("Initializing Peterwolf's Groundworks Dump Truck for MC 26.3...");
 
-        CreativeModeTabEvents.modifyOutputEvent(TOOLS_AND_UTILITIES_TAB).register(output -> {
-            output.accept(DUMP_TRUCK_ITEM);
-        });
+        PayloadTypeRegistry.serverboundPlay().register(
+                DumpTruckInputPayload.TYPE, DumpTruckInputPayload.CODEC
+        );
+
+        ServerPlayNetworking.registerGlobalReceiver(
+                DumpTruckInputPayload.TYPE, (payload, context) -> context.server().execute(() -> {
+                    ServerPlayer player = context.player();
+                    if (player.getVehicle() instanceof GroundworksDumpTruckEntity truck
+                            && truck.isDriver(player)) {
+                        truck.setControlInputs(payload.throttle(), payload.steer(), payload.bedLift());
+                    }
+                })
+        );
+
+        CreativeModeTabEvents.modifyOutputEvent(TOOLS_AND_UTILITIES_TAB).register(output ->
+                output.accept(DUMP_TRUCK_ITEM)
+        );
     }
 }

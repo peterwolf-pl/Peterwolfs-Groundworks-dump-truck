@@ -1,0 +1,13 @@
+{
+  "engine_loop": {
+    "subtitle": "subtitles.pw_groundworks_dump_truck.engine_loop",
+    "sounds": [
+      "pw_groundworks_dump_truck:engine_loop"
+    ]
+  },
+  "engine_load": {
+    "sounds": [
+      "pw_groundworks_dump_truck:engine_load"
+    ]
+  }
+}

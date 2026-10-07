@@ -3,11 +3,10 @@
   "id": "pw_groundworks_dump_truck",
   "version": "${version}",
   "name": "Peterwolf's Groundworks Dump Truck",
-  "description": "A detailed 6x4 dump truck for transporting Groundworks granular materials.",
+  "description": "Three-axle construction dump truck for hauling and tipping granular materials in Peterwolf's Groundworks.",
   "authors": ["Piotrek"],
-  "contact": {
-    "homepage": "https://github.com/peterwolf-pl/Peterwolfs-Groundworks-dump-truck"
-  },
+  "license": "MIT",
+  "icon": "icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod"],
