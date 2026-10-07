@@ -6,6 +6,7 @@ import com.mojang.math.Axis;
 import com.piotrek.groundworks.api.material.GranularComposition;
 import com.piotrek.groundworks.api.material.GranularMaterial;
 import com.piotrek.groundworks.api.material.GranularMaterialRegistry;
+import com.piotrek.groundworksdumptruck.entity.GroundworksDumpTruckEntity;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -174,9 +175,13 @@ public final class DumpTruckBedLoadRenderer {
         float frontZPx =
                 lerp(48.0F, 62.0F, footprint);
 
-        float baseYPx = -3.0F;
+        float baseYPx = GroundworksDumpTruckEntity.BED_LOAD_BASE_Y_PX;
         float peakRisePx =
-                lerp(3.0F, 18.0F, fill);
+                lerp(
+                        3.0F,
+                        GroundworksDumpTruckEntity.BED_FULL_PILE_RISE_PX,
+                        fill
+                );
 
         Vector3f[][] vertices =
                 new Vector3f[X_SEGMENTS + 1][Z_SEGMENTS + 1];
