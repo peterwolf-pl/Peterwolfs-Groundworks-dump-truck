@@ -1,0 +1,10 @@
+.gradle
+build/
+bin/
+run/
+out/
+logs/
+.idea
+*.iml
+.DS_Store
+visual-tests/current/
