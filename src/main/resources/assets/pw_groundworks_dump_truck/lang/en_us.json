@@ -2,5 +2,6 @@
   "item.pw_groundworks_dump_truck.dump_truck": "Groundworks Dump Truck",
   "key.categories.pw_groundworks_dump_truck.controls": "Groundworks Dump Truck",
   "key.pw_groundworks_dump_truck.bed_up": "Raise dump bed",
-  "key.pw_groundworks_dump_truck.bed_down": "Lower dump bed"
+  "key.pw_groundworks_dump_truck.bed_down": "Lower dump bed",
+  "subtitles.pw_groundworks_dump_truck.engine_loop": "Dump truck engine"
 }
