@@ -35,6 +35,8 @@ public class GroundworksDumpTruckEntity extends Entity {
 
     private static final EntityDataAccessor<Float> BED_ANGLE =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Boolean> BED_RAISED =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Integer> CARRIED_MATERIAL_ID =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> CARRIED_UNITS =
@@ -47,6 +49,7 @@ public class GroundworksDumpTruckEntity extends Entity {
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         builder.define(BED_ANGLE, 0.0F);
+        builder.define(BED_RAISED, false);
         builder.define(CARRIED_MATERIAL_ID, 0);
         builder.define(CARRIED_UNITS, 0);
     }
@@ -84,7 +87,7 @@ public class GroundworksDumpTruckEntity extends Entity {
 
         if (player.isSecondaryUseActive() && held.isEmpty()) {
             if (!this.level().isClientSide()) {
-                setBedAngle(getBedAngle() < MAX_BED_ANGLE * 0.5F ? MAX_BED_ANGLE : 0.0F);
+                setBedRaised(!isBedRaised());
             }
             return InteractionResult.SUCCESS;
         }
@@ -97,6 +100,27 @@ public class GroundworksDumpTruckEntity extends Entity {
         }
 
         return InteractionResult.PASS;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+
+        if (this.level().isClientSide()) {
+            return;
+        }
+
+        float current = getBedAngle();
+        float target = isBedRaised() ? MAX_BED_ANGLE : 0.0F;
+        float step = 1.25F;
+
+        if (Math.abs(target - current) <= step) {
+            if (current != target) {
+                setBedAngle(target);
+            }
+        } else {
+            setBedAngle(current + Math.copySign(step, target - current));
+        }
     }
 
     public int tryAddMaterial(GranularMaterial material, int requestedUnits) {
@@ -143,6 +167,14 @@ public class GroundworksDumpTruckEntity extends Entity {
 
     public void setBedAngle(float angle) {
         this.entityData.set(BED_ANGLE, Mth.clamp(angle, 0.0F, MAX_BED_ANGLE));
+    }
+
+    public boolean isBedRaised() {
+        return this.entityData.get(BED_RAISED);
+    }
+
+    public void setBedRaised(boolean raised) {
+        this.entityData.set(BED_RAISED, raised);
     }
 
     public int getCarriedMaterialId() {
@@ -229,6 +261,7 @@ public class GroundworksDumpTruckEntity extends Entity {
     @Override
     protected void readAdditionalSaveData(ValueInput input) {
         setBedAngle(input.getFloatOr("BedAngle", 0.0F));
+        setBedRaised(input.getIntOr("BedRaised", getBedAngle() > MAX_BED_ANGLE * 0.5F ? 1 : 0) != 0);
 
         int materialId = Math.max(0, input.getIntOr("CarriedMaterialId", 0));
         int units = Math.clamp(input.getIntOr("CarriedUnits", 0), 0, CAPACITY_UNITS);
@@ -240,6 +273,7 @@ public class GroundworksDumpTruckEntity extends Entity {
     @Override
     protected void addAdditionalSaveData(ValueOutput output) {
         output.putFloat("BedAngle", getBedAngle());
+        output.putInt("BedRaised", isBedRaised() ? 1 : 0);
         output.putInt("CarriedMaterialId", getCarriedMaterialId());
         output.putInt("CarriedUnits", getCarriedUnits());
     }
