@@ -43,11 +43,22 @@ import org.jetbrains.annotations.Nullable;
  * Server-authoritative three-axle 6x4 Groundworks dump truck.
  *
  * <p>The body is a real Groundworks granular container. Capacity is exactly
- * ten full Groundworks blocks: 10 x 512 = 5120 integer units.</p>
+ * fifteen full Groundworks blocks: 15 x 512 = 7680 integer units. The visual
+ * load mesh reaches the physical bed-wall height at this same threshold; only
+ * material above that brim level is allowed to spill over the sides.</p>
  */
 public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGranularContainer {
 
-    public static final int BED_CAPACITY = 5120;
+    public static final int BED_CAPACITY_BLOCKS = 15;
+    public static final int BED_CAPACITY = BED_CAPACITY_BLOCKS * 512;
+
+    // Shared visual/physics brim definition. The loose-load renderer starts at
+    // -3 px and reaches the inside top edge of the bed wall at -22 px when full.
+    public static final float BED_LOAD_BASE_Y_PX = -3.0F;
+    public static final float BED_BRIM_Y_PX = -22.0F;
+    public static final float BED_FULL_PILE_RISE_PX =
+            BED_LOAD_BASE_Y_PX - BED_BRIM_Y_PX;
+
     public static final float MAX_BED_ANGLE = 50.0F;
     public static final float DUMP_THRESHOLD_ANGLE = 18.0F;
 
@@ -437,8 +448,10 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
     }
 
     /**
-     * Fill the body first. Any excess from a bucket hitting a full body falls
-     * over the left/right side and becomes normal Groundworks terrain.
+     * Fill the body until the generated loose-material pile reaches the physical
+     * bed brim. BED_CAPACITY is calibrated to that same renderer threshold.
+     * Only material above the brim is allowed to fall over the left/right side
+     * and become normal Groundworks terrain.
      */
     @Override
     public int receiveMaterialAt(
@@ -710,15 +723,18 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             GranularMaterial material,
             int units
     ) {
+        // Emit overflow from the actual upper side-rail region, not from the
+        // middle of the truck body. This makes the visible stream start where a
+        // real heaped load crosses the wall height.
         Vec3 left = position()
-                .add(rightVector().scale(-1.85D))
+                .add(rightVector().scale(-1.28D))
                 .add(forwardVector().scale(-1.15D))
-                .add(0.0D, 1.45D, 0.0D);
+                .add(0.0D, 2.72D, 0.0D);
 
         Vec3 right = position()
-                .add(rightVector().scale(1.85D))
+                .add(rightVector().scale(1.28D))
                 .add(forwardVector().scale(-1.15D))
-                .add(0.0D, 1.45D, 0.0D);
+                .add(0.0D, 2.72D, 0.0D);
 
         spawnDumpParticles(
                 level,
