@@ -57,11 +57,12 @@ public final class DumpTruckHudOverlay implements HudElement {
         }
         extractor.text(
                 font,
-                String.format("%.0f%%  %d/%d u  %.1f/10 bloków",
+                String.format("%.0f%%  %d/%d u  %.1f/%d bloków",
                         fill * 100.0F,
                         units,
                         GroundworksDumpTruckEntity.BED_CAPACITY,
-                        blocks),
+                        blocks,
+                        GroundworksDumpTruckEntity.BED_CAPACITY_BLOCKS),
                 x,
                 fillBarY + 8,
                 0xFFDDDDDD,
