@@ -13,6 +13,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.CreativeModeTab;
@@ -38,6 +39,12 @@ public class GroundworksDumpTruckMod implements ModInitializer {
                     .sized(3.35F, 3.0F)
                     .clientTrackingRange(12)
                     .build(DUMP_TRUCK_KEY)
+    );
+
+    public static final SoundEvent ENGINE_LOOP = Registry.register(
+            BuiltInRegistries.SOUND_EVENT,
+            id("engine_loop"),
+            SoundEvent.createFixedRangeEvent(id("engine_loop"), 48.0F)
     );
 
     public static final ResourceKey<Item> DUMP_TRUCK_ITEM_KEY =
