@@ -47,6 +47,13 @@ public class GroundworksDumpTruckMod implements ModInitializer {
             SoundEvent.createFixedRangeEvent(id("engine_loop"), 48.0F)
     );
 
+    /** Heavier exhaust layer. No subtitle, so it does not double the idle caption. */
+    public static final SoundEvent ENGINE_LOAD = Registry.register(
+            BuiltInRegistries.SOUND_EVENT,
+            id("engine_load"),
+            SoundEvent.createFixedRangeEvent(id("engine_load"), 48.0F)
+    );
+
     public static final ResourceKey<Item> DUMP_TRUCK_ITEM_KEY =
             ResourceKey.create(Registries.ITEM, id("dump_truck"));
 

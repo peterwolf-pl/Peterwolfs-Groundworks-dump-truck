@@ -1,6 +1,7 @@
 package com.piotrek.groundworksdumptruck.client.model;
 
 import com.piotrek.groundworksdumptruck.client.render.DumpTruckRenderState;
+import com.piotrek.groundworksdumptruck.entity.GroundworksDumpTruckEntity;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
@@ -117,6 +118,12 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(0, 128).addBox(-16.0F, -33.0F, 18.0F, 32.0F, 3.0F, 25.0F)
                         .texOffs(0, 128).addBox(-15.5F, -31.5F, 42.5F, 31.0F, 2.0F, 4.0F)
 
+                        // Twin vertical stacks just behind the cab, clear of the side muffler.
+                        .texOffs(256, 64).addBox(-16.8F, -42.0F, 14.6F, 2.6F, 44.0F, 2.6F)
+                        .texOffs(384, 0).addBox(-17.4F, -43.4F, 14.0F, 3.8F, 1.6F, 3.8F)
+                        .texOffs(256, 64).addBox(14.2F, -42.0F, 14.6F, 2.6F, 44.0F, 2.6F)
+                        .texOffs(384, 0).addBox(13.6F, -43.4F, 14.0F, 3.8F, 1.6F, 3.8F)
+
                         // Door seams / lower steps.
                         .texOffs(256, 0).addBox(-19.0F, 3.0F, 21.0F, 4.0F, 3.0F, 18.0F)
                         .texOffs(256, 0).addBox(15.0F, 3.0F, 21.0F, 4.0F, 3.0F, 18.0F)
@@ -145,27 +152,30 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(448, 0).addBox(6.0F, -5.0F, 48.1F, 7.0F, 5.0F, 1.0F)
                         .texOffs(448, 32).addBox(-15.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F)
                         .texOffs(448, 32).addBox(10.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F),
-                PartPose.ZERO
+                PartPose.offset(
+                        0.0F,
+                        0.0F,
+                        GroundworksDumpTruckEntity.CAB_SHIFT_Z_PX
+                )
         );
 
-        // Steering wheel is a separate, angled child so it remains clearly
-        // visible through the empty windscreen and side opening.
-        cab.addOrReplaceChild(
+        // Round wheel, lowered slightly. The column is short and runs into the
+        // dashboard (local +Z). The old 7 px shaft continued through the glass.
+        PartDefinition steeringWheel = cab.addOrReplaceChild(
                 "steering_wheel",
                 CubeListBuilder.create()
-                        .texOffs(384, 64).addBox(-4.5F, -0.8F, -1.0F, 9.0F, 1.6F, 2.0F)
-                        .texOffs(384, 64).addBox(-0.8F, -4.5F, -1.0F, 1.6F, 9.0F, 2.0F)
-                        .texOffs(384, 64).addBox(-1.5F, -1.5F, -2.0F, 3.0F, 3.0F, 3.0F)
-                        .texOffs(256, 64).addBox(-0.8F, -0.8F, 0.0F, 1.6F, 1.6F, 7.0F),
+                        .texOffs(384, 64).addBox(-1.3F, -1.3F, -0.8F, 2.6F, 2.6F, 1.8F)
+                        .texOffs(256, 64).addBox(-0.55F, -0.55F, 0.2F, 1.1F, 1.1F, 3.6F),
                 PartPose.offsetAndRotation(
                         -6.5F,
-                        -15.0F,
-                        39.0F,
+                        -13.0F,
+                        36.6F,
                         (float) Math.toRadians(-24.0F),
                         0.0F,
                         0.0F
                 )
         );
+        addRoundSteeringWheel(steeringWheel);
 
         // Beacon uses a local pivot at its own center. Keeping absolute cab-space
         // coordinates in the rotating child made the reflector orbit around the cab.
@@ -208,7 +218,11 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         // Underside longitudinal beams.
                         .texOffs(256, 0).addBox(-11.0F, 2.0F, 5.0F, 5.0F, 5.0F, 58.0F)
                         .texOffs(256, 0).addBox(6.0F, 2.0F, 5.0F, 5.0F, 5.0F, 58.0F),
-                PartPose.offset(0.0F, 0.0F, -47.0F)
+                PartPose.offset(
+                        0.0F,
+                        0.0F,
+                        GroundworksDumpTruckEntity.BED_PIVOT_Z_PX
+                )
         );
 
         // Strong external ribs, separate so the silhouette reads from distance.
@@ -247,17 +261,55 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                 "ram_lower",
                 CubeListBuilder.create()
                         .texOffs(256, 64).addBox(-4.0F, -2.0F, -3.0F, 8.0F, 8.0F, 34.0F),
-                PartPose.offset(0.0F, 5.0F, -24.0F)
+                PartPose.offset(0.0F, 5.0F, -34.0F)
         );
 
         hydraulics.addOrReplaceChild(
                 "ram_upper",
                 CubeListBuilder.create()
                         .texOffs(384, 64).addBox(-2.7F, -2.0F, -2.0F, 5.4F, 5.4F, 36.0F),
-                PartPose.offset(0.0F, 2.0F, -12.0F)
+                PartPose.offset(0.0F, 2.0F, -22.0F)
         );
 
         return LayerDefinition.create(mesh, 512, 512);
+    }
+
+    private static void addRoundSteeringWheel(PartDefinition wheel) {
+        int rimSegments = 12;
+        float rimRadius = 4.05F;
+        for (int i = 0; i < rimSegments; i++) {
+            float angle = (float) (i * Math.PI * 2.0D / rimSegments);
+            wheel.addOrReplaceChild(
+                    "rim_" + i,
+                    CubeListBuilder.create()
+                            .texOffs(384, 64).addBox(-1.25F, -0.62F, -0.55F, 2.5F, 1.24F, 1.1F),
+                    PartPose.offsetAndRotation(
+                            (float) Math.sin(angle) * rimRadius,
+                            (float) -Math.cos(angle) * rimRadius,
+                            0.0F,
+                            0.0F,
+                            0.0F,
+                            angle
+                    )
+            );
+        }
+
+        for (int i = 0; i < 3; i++) {
+            float angle = (float) (i * Math.PI * 2.0D / 3.0D);
+            wheel.addOrReplaceChild(
+                    "spoke_" + i,
+                    CubeListBuilder.create()
+                            .texOffs(384, 64).addBox(-0.38F, -3.55F, -0.4F, 0.76F, 3.7F, 0.8F),
+                    PartPose.offsetAndRotation(
+                            0.0F,
+                            0.0F,
+                            0.0F,
+                            0.0F,
+                            0.0F,
+                            angle
+                    )
+            );
+        }
     }
 
     private static void addWheel(

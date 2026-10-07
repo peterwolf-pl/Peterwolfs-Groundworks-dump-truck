@@ -28,6 +28,14 @@ public final class DumpTruckBedLoadRenderer {
     private static final int Z_SEGMENTS = 12;
     private static final long VISUAL_SEED = 0x4D554D5054525543L;
 
+    // Inner faces of the dump body, in bed-local pixels. A full load seals
+    // slightly into these faces so the pile meets the rim instead of floating
+    // inside the walls, tailgate and bulkhead.
+    private static final float INNER_HALF_WIDTH_PX = 16.0F;
+    private static final float INNER_TAIL_Z_PX = 2.0F;
+    private static final float INNER_BULKHEAD_Z_PX = 64.0F;
+    private static final float FULL_RIM_SEAL_PX = 0.35F;
+
     private DumpTruckBedLoadRenderer() {}
 
     public static void submit(
@@ -47,7 +55,11 @@ public final class DumpTruckBedLoadRenderer {
         float fill = Math.clamp(state.fillRatio, 0.0F, 1.0F);
 
         stack.pushPose();
-        stack.translate(0.0F, 0.0F, -47.0F / 16.0F);
+        stack.translate(
+                0.0F,
+                0.0F,
+                GroundworksDumpTruckEntity.BED_PIVOT_Z_PX / 16.0F
+        );
         stack.rotateDegrees(Axis.XP, state.bedAngle);
 
         int[] counts = composition.toArray();
@@ -167,13 +179,17 @@ public final class DumpTruckBedLoadRenderer {
             GranularComposition composition,
             int selectedMaterialId
     ) {
-        float footprint = (float) Math.sqrt(fill);
+        // Stay heaped in the middle until the bed is nearly full, then reach
+        // the walls. A square-root spread covered the body too evenly, too early.
+        float spread = (float) Math.pow(fill, 1.55F);
         float halfWidthPx =
-                lerp(8.0F, 15.3F, footprint);
+                lerp(7.0F, INNER_HALF_WIDTH_PX + FULL_RIM_SEAL_PX, spread);
         float backZPx =
-                lerp(18.0F, 4.0F, footprint);
+                lerp(22.0F, INNER_TAIL_Z_PX - FULL_RIM_SEAL_PX, spread);
         float frontZPx =
-                lerp(48.0F, 62.0F, footprint);
+                lerp(44.0F, INNER_BULKHEAD_Z_PX + FULL_RIM_SEAL_PX, spread);
+        float sideDrop = lerp(0.55F, 0.10F, spread);
+        float longDrop = lerp(0.46F, 0.18F, spread);
 
         float baseYPx = GroundworksDumpTruckEntity.BED_LOAD_BASE_Y_PX;
         float peakRisePx =
@@ -202,23 +218,16 @@ public final class DumpTruckBedLoadRenderer {
                         Math.abs((fz - 0.58F) / 0.58F);
 
                 float profile = 1.0F
-                        - 0.48F * nx * nx
-                        - 0.38F
+                        - sideDrop * nx * nx
+                        - longDrop
                         * longitudinal
-                        * longitudinal;
-
-                float crown =
-                        0.12F
-                                * (float) Math.sin(
-                                        (fx * 2.3F
-                                                + fz * 2.7F)
-                                                * Math.PI
-                                );
+                        * longitudinal
+                        + lump(fx, fz) * 0.38F;
 
                 profile = Math.clamp(
-                        profile + crown,
-                        0.10F,
-                        1.0F
+                        profile,
+                        0.12F,
+                        1.12F
                 );
 
                 float surfaceYPx =
@@ -557,6 +566,17 @@ public final class DumpTruckBedLoadRenderer {
                 y / 16.0F,
                 z / 16.0F
         );
+    }
+
+    private static float lump(float x, float z) {
+        float coarse = hash(x * 2.6F + 0.2F, z * 1.7F + 0.4F);
+        float fine = hash(x * 6.4F + 1.3F, z * 5.1F + 0.8F);
+        return coarse * 0.72F + fine * 0.28F - 0.5F;
+    }
+
+    private static float hash(float x, float z) {
+        float n = (float) Math.sin(x * 127.1F + z * 311.7F) * 43758.5453F;
+        return n - (float) Math.floor(n);
     }
 
     private static float lerp(

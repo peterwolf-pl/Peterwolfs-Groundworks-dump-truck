@@ -8,6 +8,7 @@ import com.piotrek.groundworks.api.material.GranularMaterial;
 import com.piotrek.groundworks.api.material.GranularMaterialRegistry;
 import com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod;
 import com.piotrek.groundworksdumptruck.vehicle.DumpTruckMovementController;
+import com.piotrek.groundworksdumptruck.vehicle.ExhaustPuffs;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
@@ -38,6 +39,8 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 /**
  * Server-authoritative three-axle 6x4 Groundworks dump truck.
@@ -54,6 +57,12 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
     // Shared visual/physics brim definition. The loose-load renderer starts at
     // -3 px and reaches the inside top edge of the bed wall at -22 px when full.
+    /** Cab and stacks move forward so the pipes clear the dump body. */
+    public static final float CAB_SHIFT_Z_PX = 4.0F;
+
+    /** Rear pivot of the dump body. More negative is farther behind the cab. */
+    public static final float BED_PIVOT_Z_PX = -57.0F;
+
     public static final float BED_LOAD_BASE_Y_PX = -3.0F;
     public static final float BED_BRIM_Y_PX = -22.0F;
     public static final float BED_FULL_PILE_RISE_PX =
@@ -176,6 +185,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         super.tick();
 
         if (level().isClientSide()) {
+            spawnExhaustSmoke();
             return;
         }
 
@@ -441,8 +451,8 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         // blocks above as long as the release point projects over the body opening.
         // Horizontal limits follow the visible dump-bed footprint.
         return Math.abs(localRight) <= 1.70D
-                && localForward >= -3.35D
-                && localForward <= 1.30D
+                && localForward >= -3.98D
+                && localForward <= 0.70D
                 && delta.y >= 0.70D
                 && delta.y <= 8.00D;
     }
@@ -513,7 +523,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
             double side = rightSide ? 2.15D : -2.15D;
             double longitudinal =
-                    -0.75D - ((pass / 2) * 0.75D);
+                    -1.375D - ((pass / 2) * 0.75D);
 
             Vec3 spillPoint = position()
                     .add(forward.scale(longitudinal))
@@ -673,7 +683,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
         double angleRad = Math.toRadians(bedAngle);
         double rearOffset =
-                3.05D + Math.cos(angleRad) * 0.20D;
+                3.675D + Math.cos(angleRad) * 0.20D;
         double lift =
                 0.95D + Math.sin(angleRad) * 0.80D;
 
@@ -728,12 +738,12 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         // real heaped load crosses the wall height.
         Vec3 left = position()
                 .add(rightVector().scale(-1.28D))
-                .add(forwardVector().scale(-1.15D))
+                .add(forwardVector().scale(-1.775D))
                 .add(0.0D, 2.72D, 0.0D);
 
         Vec3 right = position()
                 .add(rightVector().scale(1.28D))
-                .add(forwardVector().scale(-1.15D))
+                .add(forwardVector().scale(-1.775D))
                 .add(0.0D, 2.72D, 0.0D);
 
         spawnDumpParticles(
@@ -781,6 +791,136 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
                 0.32D,
                 0.07D
         );
+    }
+
+    /**
+     * Mouth centers in cab-local pixels. The cab part offset is applied
+     * by the same matrix as the renderer, so these stay on the lip boxes.
+     */
+    public static final float EXHAUST_LEFT_X_PX = -15.5F;
+    public static final float EXHAUST_RIGHT_X_PX = 15.5F;
+    public static final float EXHAUST_TIP_Y_PX = -43.4F;
+    public static final float EXHAUST_TIP_Z_PX = 15.9F;
+
+    private void spawnExhaustSmoke() {
+        if (!isEngineRunning()) {
+            return;
+        }
+
+        float load = getEngineLoad();
+        spawnLightExhaustPuffs(load, exhaustTip(EXHAUST_LEFT_X_PX));
+        spawnLightExhaustPuffs(load, exhaustTip(EXHAUST_RIGHT_X_PX));
+
+        if (load <= 0.30F) {
+            return;
+        }
+
+        emitLoadedSmoke(exhaustTip(EXHAUST_LEFT_X_PX), load);
+        emitLoadedSmoke(exhaustTip(EXHAUST_RIGHT_X_PX), load);
+    }
+
+    private void spawnLightExhaustPuffs(float load, Vec3 exhaustPos) {
+        int count = ExhaustPuffs.whitePuffCount(load, tickCount);
+        if (count == 0) {
+            return;
+        }
+
+        float blend = (load - ExhaustPuffs.MIN_LOAD)
+                / (ExhaustPuffs.MAX_LOAD - ExhaustPuffs.MIN_LOAD);
+        double spread = 0.004D + 0.010D * blend;
+        double rise = 0.010D + 0.012D * blend;
+        for (int i = 0; i < count; i++) {
+            level().addParticle(
+                    ParticleTypes.WHITE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.08D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * spread,
+                    rise + Math.random() * 0.008D,
+                    (Math.random() - 0.5D) * spread
+            );
+        }
+    }
+
+    private void emitLoadedSmoke(Vec3 exhaustPos, float load) {
+        if (load >= 0.95F) {
+            level().addParticle(
+                    ParticleTypes.LARGE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.03D,
+                    0.08D + Math.random() * 0.04D,
+                    (Math.random() - 0.5D) * 0.03D
+            );
+            level().addParticle(
+                    ParticleTypes.SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.02D,
+                    0.06D,
+                    (Math.random() - 0.5D) * 0.02D
+            );
+            return;
+        }
+
+        if (load > 0.60F) {
+            if (tickCount % 2 == 0) {
+                level().addParticle(
+                        ParticleTypes.SMOKE,
+                        exhaustPos.x,
+                        exhaustPos.y + 0.05D,
+                        exhaustPos.z,
+                        (Math.random() - 0.5D) * 0.02D,
+                        0.05D + Math.random() * 0.02D,
+                        (Math.random() - 0.5D) * 0.02D
+                );
+            }
+            return;
+        }
+
+        if (tickCount % 4 == 0) {
+            level().addParticle(
+                    ParticleTypes.WHITE_SMOKE,
+                    exhaustPos.x,
+                    exhaustPos.y + 0.05D,
+                    exhaustPos.z,
+                    (Math.random() - 0.5D) * 0.01D,
+                    0.04D,
+                    (Math.random() - 0.5D) * 0.01D
+            );
+        }
+    }
+
+    /** Stack mouth in world space. Same transform chain as DumpTruckRenderer. */
+    public Vec3 exhaustTip(float modelXPx) {
+        Matrix4f mat = new Matrix4f();
+        Vec3 base = position();
+        mat.translate((float) base.x, (float) base.y, (float) base.z);
+        mat.rotate((float) Math.toRadians(-getYRot()), 0.0F, 1.0F, 0.0F);
+
+        float pitch = getVehiclePitch();
+        float roll = getVehicleRoll();
+        if (Math.abs(pitch) > 0.01F) {
+            mat.rotate((float) Math.toRadians(pitch), 1.0F, 0.0F, 0.0F);
+        }
+        if (Math.abs(roll) > 0.01F) {
+            mat.rotate((float) Math.toRadians(roll), 0.0F, 0.0F, 1.0F);
+        }
+
+        mat.scale(-1.0F, -1.0F, 1.0F);
+        mat.translate(0.0F, -1.5F, 0.0F);
+        mat.translate(0.0F, 0.0F, CAB_SHIFT_Z_PX / 16.0F);
+
+        Vector4f mouth = new Vector4f(
+                modelXPx / 16.0F,
+                EXHAUST_TIP_Y_PX / 16.0F,
+                EXHAUST_TIP_Z_PX / 16.0F,
+                1.0F
+        );
+        mat.transform(mouth);
+        return new Vec3(mouth.x, mouth.y, mouth.z);
     }
 
     private Vec3 forwardVector() {
@@ -913,13 +1053,12 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         Vec3 forward = forwardVector();
         Vec3 right = rightVector();
 
-        // Keep the rider attachment calibrated to the actual modeled driver's
-        // seat center: seat X = -6.5 px (-0.40625 block), seat Z = 31.5 px
-        // (1.96875 blocks forward). This prevents the player from sitting beside
-        // the seat while still keeping the existing vertical riding pose.
-        return forward.scale(1.96875D)
-                .add(right.scale(-0.40625D))
-                .add(0.0D, 1.48D, 0.0D);
+        // Seat model X is -6.5 px. The renderer mirrors X, so that cushion
+        // appears on the driver's left. rightVector() points to that same side
+        // (east when the truck faces south), so the rider offset is positive.
+        return forward.scale(2.21875D)
+                .add(right.scale(0.40625D))
+                .add(0.0D, 1.88D, 0.0D);
     }
 
     @Override
