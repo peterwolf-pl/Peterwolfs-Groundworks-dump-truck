@@ -6,7 +6,7 @@
   "description": "Three-axle construction dump truck for hauling and tipping granular materials in Peterwolf's Groundworks.",
   "authors": ["Piotrek"],
   "license": "MIT",
-  "icon": "assets/pw_groundworks_dump_truck/textures/item/dump_truck.png",
+  "icon": "icon.png",
   "environment": "*",
   "entrypoints": {
     "main": ["com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod"],
