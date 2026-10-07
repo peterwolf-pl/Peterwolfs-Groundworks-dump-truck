@@ -152,6 +152,11 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
     }
 
     @Override
+    public boolean isAdvanceInProgress() {
+        return remoteAdvanceRemaining > 0.01D;
+    }
+
+    @Override
     public void tick() {
         super.tick();
 
