@@ -52,9 +52,14 @@ public class DumpTruckRenderer
         state.wheelRotation = entity.getWheelRotation();
         state.carriedMaterialId = entity.getCarriedMaterialId();
         state.carriedUnits = entity.getCarriedUnits();
+        state.dirtUnits = entity.getDirtUnits();
+        state.sandUnits = entity.getSandUnits();
+        state.gravelUnits = entity.getGravelUnits();
+        state.cobblestoneUnits = entity.getCobblestoneUnits();
         state.fillRatio = (float) entity.getCarriedUnits()
                 / (float) GroundworksDumpTruckEntity.BED_CAPACITY;
         state.engineRunning = entity.isEngineRunning();
+        state.dumping = entity.isDumping();
 
         state.beaconSpin = (entity.tickCount + partialTick) * 0.70F;
         state.beaconFlash = state.engineRunning && ((entity.tickCount / 4) % 2 == 0);
