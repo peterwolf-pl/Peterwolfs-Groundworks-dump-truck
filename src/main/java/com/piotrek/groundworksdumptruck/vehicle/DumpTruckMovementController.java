@@ -89,6 +89,15 @@ public final class DumpTruckMovementController {
         return new StepResult(forwardSpeed, steerAngle, wheelRotation, deltaYaw);
     }
 
+    /**
+     * Hard stop used after a short remote repositioning request. This avoids
+     * coasting past an exact machine-to-machine spacing adjustment.
+     */
+    public void stopMotion() {
+        forwardSpeed = 0.0F;
+        steerAngle = 0.0F;
+    }
+
     public void updateTerrainOrientation(Level level, Vec3 pos, float yaw) {
         WheelHeights h = sampleAll(level, pos, yaw);
 
