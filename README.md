@@ -14,7 +14,7 @@ Three-axle 6x4 construction dump truck for Minecraft Java 26.3 / Fabric.
 - Gravity-driven rear tailgate.
 - Two-stage hydraulic hoist animation.
 - Detailed cab, glazing, mirrors, steps, grille, lights, tanks and safety beacon.
-- Exact cargo capacity: 10 full Groundworks blocks = 5120 units.
+- Exact cargo capacity: 15 full Groundworks blocks = 7680 units. The generated loose-material pile reaches the physical bed brim at 100%; only material above that visual/physical threshold spills over the sides.
 - Accepts dirt, sand, gravel, cobblestone and mixed Groundworks compositions.
 - Generated loose-material mound instead of a rectangular cargo block.
 - Mixed cargo uses Groundworks material proportions for visible textures.
