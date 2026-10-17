@@ -60,7 +60,7 @@ public final class DumpTruckBedLoadRenderer {
                 0.0F,
                 GroundworksDumpTruckEntity.BED_PIVOT_Z_PX / 16.0F
         );
-        stack.rotateDegrees(Axis.XP, state.bedAngle);
+        stack.mulPose(Axis.XP.rotationDegrees(state.bedAngle));
 
         int[] counts = composition.toArray();
         for (int materialId = 1; materialId < counts.length; materialId++) {

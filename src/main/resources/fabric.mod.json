@@ -6,15 +6,18 @@
   "description": "Three-axle construction dump truck for hauling and tipping granular materials in Peterwolf's Groundworks.",
   "authors": ["Piotrek"],
   "license": "MIT",
-  "icon": "icon.png",
+  "icon": "assets/pw_groundworks_dump_truck/icon.png",
   "environment": "*",
+  "mixins": [
+    "pw_groundworks_dump_truck.mixins.json"
+  ],
   "entrypoints": {
     "main": ["com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod"],
     "client": ["com.piotrek.groundworksdumptruck.client.GroundworksDumpTruckClient"]
   },
   "depends": {
     "fabricloader": ">=0.19.5",
-    "minecraft": "~26.3",
+    "minecraft": "~26.2",
     "java": ">=25",
     "fabric-api": "*",
     "pw_groundworks": ">=0.1.0"

@@ -28,27 +28,27 @@ public final class DumpTruckInputHandler {
             return;
         }
 
-        boolean inGame = client.mouseHandler != null && client.mouseHandler.isMouseGrabbed();
+        boolean inGame = client.mouseHandler != null && client.mouseHandler.isMouseGrabbed() && client.getWindow() != null;
 
         boolean forward = (client.options.keyUp != null && client.options.keyUp.isDown())
                 || (client.player.input != null && client.player.input.keyPresses.forward())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_W));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_W));
         boolean backward = (client.options.keyDown != null && client.options.keyDown.isDown())
                 || (client.player.input != null && client.player.input.keyPresses.backward())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_S));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_S));
         boolean left = (client.options.keyLeft != null && client.options.keyLeft.isDown())
                 || (client.player.input != null && client.player.input.keyPresses.left())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_A));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_A));
         boolean right = (client.options.keyRight != null && client.options.keyRight.isDown())
                 || (client.player.input != null && client.player.input.keyPresses.right())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_D));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_D));
 
         boolean bedUp = (DumpTruckKeyBindings.KEY_BED_UP != null
                 && DumpTruckKeyBindings.KEY_BED_UP.isDown())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_UP));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_UP));
         boolean bedDown = (DumpTruckKeyBindings.KEY_BED_DOWN != null
                 && DumpTruckKeyBindings.KEY_BED_DOWN.isDown())
-                || (inGame && InputConstants.isKeyDown(InputConstants.KEY_DOWN));
+                || (inGame && InputConstants.isKeyDown(client.getWindow(), InputConstants.KEY_DOWN));
 
         float throttle = 0.0F;
         float steer = 0.0F;

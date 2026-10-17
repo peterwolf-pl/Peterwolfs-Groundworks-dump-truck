@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.Identifier;
 
 public class DumpTruckRenderer
@@ -19,6 +20,8 @@ public class DumpTruckRenderer
 
     public static final Identifier TEXTURE =
             GroundworksDumpTruckMod.id("textures/entity/dump_truck.png");
+
+    private static final int FULL_BRIGHT = 0xF000F0;
 
     private final DumpTruckModel model;
 
@@ -59,6 +62,7 @@ public class DumpTruckRenderer
         state.fillRatio = (float) entity.getCarriedUnits()
                 / (float) GroundworksDumpTruckEntity.BED_CAPACITY;
         state.engineRunning = entity.isEngineRunning();
+        state.braking = entity.isBraking();
         state.dumping = entity.isDumping();
 
         state.beaconSpin = (entity.tickCount + partialTick) * 0.70F;
@@ -74,13 +78,13 @@ public class DumpTruckRenderer
     ) {
         stack.pushPose();
 
-        stack.rotateDegrees(Axis.YP, -state.baseYaw);
+        stack.mulPose(Axis.YP.rotationDegrees(-state.baseYaw));
 
         if (Math.abs(state.basePitch) > 0.01F) {
-            stack.rotateDegrees(Axis.XP, state.basePitch);
+            stack.mulPose(Axis.XP.rotationDegrees(state.basePitch));
         }
         if (Math.abs(state.baseRoll) > 0.01F) {
-            stack.rotateDegrees(Axis.ZP, state.baseRoll);
+            stack.mulPose(Axis.ZP.rotationDegrees(state.baseRoll));
         }
 
         stack.scale(-1.0F, -1.0F, 1.0F);
@@ -95,11 +99,62 @@ public class DumpTruckRenderer
                 RenderTypes.entityCutout(TEXTURE),
                 state.lightCoords,
                 OverlayTexture.NO_OVERLAY,
-                state.outlineColor
+                state.outlineColor,
+                null
         );
+
+        submitLights(state, stack, collector);
 
         DumpTruckBedLoadRenderer.submit(state, stack, collector);
 
+        stack.popPose();
+    }
+
+    private void submitLights(
+            DumpTruckRenderState state,
+            PoseStack stack,
+            SubmitNodeCollector collector
+    ) {
+        if (!state.engineRunning) {
+            return;
+        }
+
+        stack.pushPose();
+        stack.translate(0.0F, 0.0F, GroundworksDumpTruckEntity.CAB_SHIFT_Z_PX / 16.0F);
+        model.headlights().visible = true;
+        collector.submitModelPart(
+                model.headlights(),
+                stack,
+                RenderTypes.eyes(TEXTURE),
+                FULL_BRIGHT,
+                OverlayTexture.NO_OVERLAY,
+                (TextureAtlasSprite) null
+        );
+        stack.popPose();
+
+        stack.pushPose();
+        model.dumpBed().translateAndRotate(stack);
+        model.tailgate().translateAndRotate(stack);
+        model.tailLights().visible = true;
+        collector.submitModelPart(
+                model.tailLights(),
+                stack,
+                RenderTypes.eyes(TEXTURE),
+                FULL_BRIGHT,
+                OverlayTexture.NO_OVERLAY,
+                (TextureAtlasSprite) null
+        );
+        if (state.braking) {
+            model.brakeLights().visible = true;
+            collector.submitModelPart(
+                    model.brakeLights(),
+                    stack,
+                    RenderTypes.eyes(TEXTURE),
+                    FULL_BRIGHT,
+                    OverlayTexture.NO_OVERLAY,
+                    (TextureAtlasSprite) null
+            );
+        }
         stack.popPose();
     }
 }

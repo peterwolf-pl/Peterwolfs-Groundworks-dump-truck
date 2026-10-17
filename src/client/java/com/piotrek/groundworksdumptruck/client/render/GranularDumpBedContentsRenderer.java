@@ -48,7 +48,7 @@ public final class GranularDumpBedContentsRenderer {
 
         // Follow the dump body hinge exactly.
         stack.translate(0.0F, 0.0F, BED_PIVOT_Z_PX / 16.0F);
-        stack.rotateDegrees(Axis.XP, -state.bedAngle);
+        stack.mulPose(Axis.XP.rotationDegrees(-state.bedAngle));
 
         collector.submitCustomGeometry(
                 stack,

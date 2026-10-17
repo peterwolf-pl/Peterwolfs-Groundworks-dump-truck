@@ -18,14 +18,14 @@ public final class DumpTruckKeyBindings {
     public static void register() {
         KEY_BED_UP = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.pw_groundworks_dump_truck.bed_up",
-                InputConstants.Type.KEYBOARD,
+                InputConstants.Type.KEYSYM,
                 InputConstants.KEY_UP,
                 CATEGORY
         ));
 
         KEY_BED_DOWN = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.pw_groundworks_dump_truck.bed_down",
-                InputConstants.Type.KEYBOARD,
+                InputConstants.Type.KEYSYM,
                 InputConstants.KEY_DOWN,
                 CATEGORY
         ));
