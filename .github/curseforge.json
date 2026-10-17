@@ -1,0 +1,26 @@
+{
+  "projectId": 1734012,
+  "title": "Peterwolf's Groundworks Dump Truck",
+  "summary": "Three-axle construction dump truck for hauling and tipping granular materials in Peterwolf's Groundworks.",
+  "description": "# Peterwolf's Groundworks Dump Truck\n\nThree-axle 6x4 construction dump truck for Minecraft Java 26.3 / Fabric.\n\n## Features\n\n- Detailed cab-over 6x4 construction truck model.\n- Six animated wheels with steerable front axle.\n- Tandem rear axles and terrain-aware pitch / roll.\n- Server-authoritative WASD driving.\n- Animated dump body up to 50 degrees.\n- Arrow Up raises the dump body.\n- Arrow Down lowers the dump body.\n- Gravity-driven rear tailgate.\n- Two-stage hydraulic hoist animation.\n- Detailed cab, glazing, mirrors, steps, grille, lights, tanks and safety beacon.\n- Exact cargo capacity: 15 full Groundworks blocks = 7680 units. The generated loose-material pile reaches the physical bed brim at 100%; only material above that visual/physical threshold spills over the sides.\n- Accepts dirt, sand, gravel, cobblestone and mixed Groundworks compositions.\n- Generated loose-material mound instead of a rectangular cargo block.\n- Mixed cargo uses Groundworks material proportions for visible textures.\n- Real dumping back into Groundworks terrain.\n- Loader and excavator can dump directly into the truck through the generic Groundworks world-container API.\n- When the body becomes full, additional material spills to both sides and forms Groundworks piles.\n- No material is silently deleted. Rejected overflow remains in the source bucket if the side piles cannot accept it.\n- Loaded trucks cannot be converted back into an item, preventing cargo loss.\n\n## Controls\n\n- W / S: forward / reverse\n- A / D: steer\n- Arrow Up: raise dump body\n- Arrow Down: lower dump body\n- Right click: enter\n- Shift + right click with empty hand: retrieve an empty truck\n\n## Item and mod assets\n\n- Dedicated dump truck item icon.\n- Dedicated mod icon.\n- English and Polish translations.\n- Item is available in Tools & Utilities.\n\n## Dependencies\n\nRequires Peterwolf's Groundworks.\n\nLoader-to-truck transfer requires the matching Groundworks Loader integration.\nExcavator-to-truck transfer requires the matching Groundworks Excavator integration.\n",
+  "enabled": true,
+  "releaseType": "release",
+  "changelogType": "markdown",
+  "changelog": "",
+  "manualRelease": false,
+  "media": {
+    "youtube": [],
+    "gallery": []
+  },
+  "dependencies": [
+    {
+      "slug": "fabric-api",
+      "type": "requiredDependency"
+    },
+    {
+      "slug": "peterwolfs-groundworks",
+      "type": "requiredDependency"
+    }
+  ],
+  "publishedVersion": null
+}

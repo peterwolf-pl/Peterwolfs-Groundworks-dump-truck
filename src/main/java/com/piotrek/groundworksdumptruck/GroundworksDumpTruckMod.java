@@ -1,10 +1,12 @@
 package com.piotrek.groundworksdumptruck;
 
+import com.piotrek.groundworksdumptruck.command.DumpTruckCommand;
 import com.piotrek.groundworksdumptruck.entity.GroundworksDumpTruckEntity;
 import com.piotrek.groundworksdumptruck.item.DumpTruckItem;
 import com.piotrek.groundworksdumptruck.network.DumpTruckInputPayload;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.core.Registry;
@@ -72,7 +74,7 @@ public class GroundworksDumpTruckMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("Initializing Peterwolf's Groundworks Dump Truck for MC 26.3...");
 
-        PayloadTypeRegistry.serverboundPlay().register(
+        PayloadTypeRegistry.playC2S().register(
                 DumpTruckInputPayload.TYPE, DumpTruckInputPayload.CODEC
         );
 
@@ -86,8 +88,12 @@ public class GroundworksDumpTruckMod implements ModInitializer {
                 })
         );
 
-        CreativeModeTabEvents.modifyOutputEvent(TOOLS_AND_UTILITIES_TAB).register(output ->
+        ItemGroupEvents.modifyEntriesEvent(TOOLS_AND_UTILITIES_TAB).register(output ->
                 output.accept(DUMP_TRUCK_ITEM)
+        );
+
+        CommandRegistrationCallback.EVENT.register(
+                (dispatcher, registryAccess, environment) -> DumpTruckCommand.register(dispatcher)
         );
     }
 }

@@ -20,6 +20,7 @@ public class DumpTruckRenderState extends EntityRenderState {
     public float fillRatio;
 
     public boolean engineRunning;
+    public boolean braking;
     public boolean dumping;
     public float beaconSpin;
     public boolean beaconFlash;
