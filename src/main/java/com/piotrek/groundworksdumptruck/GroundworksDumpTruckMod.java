@@ -1,9 +1,11 @@
 package com.piotrek.groundworksdumptruck;
 
+import com.piotrek.groundworksdumptruck.command.DumpTruckCommand;
 import com.piotrek.groundworksdumptruck.entity.GroundworksDumpTruckEntity;
 import com.piotrek.groundworksdumptruck.item.DumpTruckItem;
 import com.piotrek.groundworksdumptruck.network.DumpTruckInputPayload;
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.creativetab.v1.CreativeModeTabEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -88,6 +90,10 @@ public class GroundworksDumpTruckMod implements ModInitializer {
 
         CreativeModeTabEvents.modifyOutputEvent(TOOLS_AND_UTILITIES_TAB).register(output ->
                 output.accept(DUMP_TRUCK_ITEM)
+        );
+
+        CommandRegistrationCallback.EVENT.register(
+                (dispatcher, registryAccess, environment) -> DumpTruckCommand.register(dispatcher)
         );
     }
 }

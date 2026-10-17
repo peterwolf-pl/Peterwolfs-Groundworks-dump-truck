@@ -23,6 +23,15 @@ dependencies {
 	testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = 'pw_groundworks_dump_truck_test'
+		enableGameTests = false
+		enableClientGameTests = true
+		eula = true
+	}
+}
 test { useJUnitPlatform() }
 processResources {
 	def version = project.version

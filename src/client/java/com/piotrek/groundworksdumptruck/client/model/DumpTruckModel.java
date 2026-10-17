@@ -30,6 +30,9 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
     private final ModelPart ramUpper;
     private final ModelPart ramLower;
     private final ModelPart beaconReflector;
+    private final ModelPart headlights;
+    private final ModelPart tailLights;
+    private final ModelPart brakeLights;
 
     public DumpTruckModel(ModelPart root) {
         super(root);
@@ -50,6 +53,29 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
         this.beaconReflector = root.getChild("cab")
                 .getChild("beacon_base")
                 .getChild("beacon_reflector");
+        this.headlights = root.getChild("cab").getChild("headlights");
+        this.tailLights = this.dumpBed.getChild("tailgate").getChild("tail_lights");
+        this.brakeLights = this.dumpBed.getChild("tailgate").getChild("brake_lights");
+    }
+
+    public ModelPart dumpBed() {
+        return dumpBed;
+    }
+
+    public ModelPart tailgate() {
+        return tailgate;
+    }
+
+    public ModelPart headlights() {
+        return headlights;
+    }
+
+    public ModelPart tailLights() {
+        return tailLights;
+    }
+
+    public ModelPart brakeLights() {
+        return brakeLights;
     }
 
     public static LayerDefinition createBodyLayer() {
@@ -85,7 +111,8 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         // filled the whole footwell and hid the driver interior.
                         // Keep only a floor, rear lower bulkhead and low sill panels.
                         .texOffs(0, 128).addBox(-15.0F, 4.0F, 19.0F, 30.0F, 4.0F, 26.0F)
-                        .texOffs(0, 128).addBox(-15.0F, -10.0F, 19.0F, 30.0F, 14.0F, 3.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -10.0F, 19.0F, 30.0F, 14.0F, 2.0F)
+                        .texOffs(0, 470).addBox(-15.0F, -10.0F, 21.0F, 30.0F, 14.0F, 1.0F)
                         .texOffs(0, 128).addBox(-15.5F, -6.0F, 22.0F, 3.5F, 10.0F, 20.0F)
                         .texOffs(0, 128).addBox(12.0F, -6.0F, 22.0F, 3.5F, 10.0F, 20.0F)
 
@@ -93,7 +120,16 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         // lower panels and window frames. These boxes replace
                         // the old solid upper cab so the interior is actually
                         // visible through the windscreen and side openings.
-                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 19.0F, 30.0F, 20.0F, 3.0F)
+                        // Rear wall with a centered window. Outer skin stays
+                        // body orange; the cabin face is the dark lining.
+                        .texOffs(0, 128).addBox(-15.0F, -30.0F, 19.0F, 30.0F, 2.0F, 2.0F)
+                        .texOffs(0, 470).addBox(-15.0F, -30.0F, 21.0F, 30.0F, 2.0F, 1.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -15.0F, 19.0F, 30.0F, 5.0F, 2.0F)
+                        .texOffs(0, 470).addBox(-15.0F, -15.0F, 21.0F, 30.0F, 5.0F, 1.0F)
+                        .texOffs(0, 128).addBox(-15.0F, -28.0F, 19.0F, 6.0F, 13.0F, 2.0F)
+                        .texOffs(0, 470).addBox(-15.0F, -28.0F, 21.0F, 6.0F, 13.0F, 1.0F)
+                        .texOffs(0, 128).addBox(9.0F, -28.0F, 19.0F, 6.0F, 13.0F, 2.0F)
+                        .texOffs(0, 470).addBox(9.0F, -28.0F, 21.0F, 6.0F, 13.0F, 1.0F)
                         // Side window division: narrow rear and front pillars.
                         .texOffs(0, 128).addBox(-15.5F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
                         .texOffs(0, 128).addBox(12.0F, -30.0F, 22.0F, 3.5F, 20.0F, 3.0F)
@@ -147,9 +183,10 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         .texOffs(256, 64).addBox(-10.0F, 1.5F, 38.0F, 3.0F, 1.0F, 4.0F)
                         .texOffs(256, 64).addBox(-5.0F, 1.5F, 38.0F, 3.0F, 1.0F, 4.0F)
 
-                        // Headlamps and indicators.
-                        .texOffs(448, 0).addBox(-13.0F, -5.0F, 48.1F, 7.0F, 5.0F, 1.0F)
-                        .texOffs(448, 0).addBox(6.0F, -5.0F, 48.1F, 7.0F, 5.0F, 1.0F)
+                        // Headlamp housings and indicators. Lenses are a child
+                        // so they can be drawn full-bright while the engine runs.
+                        .texOffs(256, 64).addBox(-13.6F, -5.6F, 47.2F, 8.2F, 6.2F, 1.4F)
+                        .texOffs(256, 64).addBox(5.4F, -5.6F, 47.2F, 8.2F, 6.2F, 1.4F)
                         .texOffs(448, 32).addBox(-15.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F)
                         .texOffs(448, 32).addBox(10.0F, 1.0F, 48.1F, 5.0F, 3.0F, 1.0F),
                 PartPose.offset(
@@ -157,6 +194,14 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
                         0.0F,
                         GroundworksDumpTruckEntity.CAB_SHIFT_Z_PX
                 )
+        );
+
+        cab.addOrReplaceChild(
+                "headlights",
+                CubeListBuilder.create()
+                        .texOffs(400, 488).addBox(-12.8F, -4.8F, 48.4F, 6.6F, 4.6F, 0.7F)
+                        .texOffs(400, 488).addBox(6.2F, -4.8F, 48.4F, 6.6F, 4.6F, 0.7F),
+                PartPose.ZERO
         );
 
         // Round wheel, lowered slightly. The column is short and runs into the
@@ -242,13 +287,31 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
             );
         }
 
-        bed.addOrReplaceChild(
+        PartDefinition tailgate = bed.addOrReplaceChild(
                 "tailgate",
                 CubeListBuilder.create()
                         .texOffs(0, 256).addBox(-19.0F, 0.0F, -3.0F, 38.0F, 24.0F, 4.0F)
                         .texOffs(256, 0).addBox(-20.0F, 4.0F, -4.0F, 40.0F, 3.0F, 3.0F)
-                        .texOffs(256, 0).addBox(-20.0F, 18.0F, -4.0F, 40.0F, 3.0F, 3.0F),
+                        .texOffs(256, 0).addBox(-20.0F, 18.0F, -4.0F, 40.0F, 3.0F, 3.0F)
+                        .texOffs(256, 64).addBox(-17.4F, 7.4F, -4.4F, 5.6F, 4.8F, 1.2F)
+                        .texOffs(256, 64).addBox(11.8F, 7.4F, -4.4F, 5.6F, 4.8F, 1.2F)
+                        .texOffs(256, 64).addBox(-17.6F, 1.8F, -4.4F, 6.0F, 5.2F, 1.2F)
+                        .texOffs(256, 64).addBox(11.6F, 1.8F, -4.4F, 6.0F, 5.2F, 1.2F),
                 PartPose.offset(0.0F, -22.0F, 1.0F)
+        );
+        tailgate.addOrReplaceChild(
+                "tail_lights",
+                CubeListBuilder.create()
+                        .texOffs(428, 488).addBox(-16.8F, 7.9F, -4.8F, 4.4F, 3.8F, 0.6F)
+                        .texOffs(428, 488).addBox(12.4F, 7.9F, -4.8F, 4.4F, 3.8F, 0.6F),
+                PartPose.ZERO
+        );
+        tailgate.addOrReplaceChild(
+                "brake_lights",
+                CubeListBuilder.create()
+                        .texOffs(456, 488).addBox(-17.2F, 2.4F, -4.9F, 5.2F, 4.4F, 0.7F)
+                        .texOffs(456, 488).addBox(12.0F, 2.4F, -4.9F, 5.2F, 4.4F, 0.7F),
+                PartPose.ZERO
         );
 
         PartDefinition hydraulics = root.addOrReplaceChild(
@@ -369,5 +432,11 @@ public class DumpTruckModel extends EntityModel<DumpTruckRenderState> {
 
         beaconReflector.yRot = state.beaconSpin;
         beaconReflector.visible = state.beaconFlash;
+
+        // Unlit lenses stay in the main pass. The glowing pass draws them
+        // only while the engine is running, so the two passes do not overlap.
+        headlights.visible = !state.engineRunning;
+        tailLights.visible = !state.engineRunning;
+        brakeLights.visible = false;
     }
 }

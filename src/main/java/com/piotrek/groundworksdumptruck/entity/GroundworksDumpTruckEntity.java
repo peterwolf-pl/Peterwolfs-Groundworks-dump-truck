@@ -1,14 +1,19 @@
 package com.piotrek.groundworksdumptruck.entity;
 
 import com.piotrek.groundworks.api.GroundworksApi;
+import com.piotrek.groundworks.api.container.GranularContainerTransferApi;
 import com.piotrek.groundworks.api.container.IMobileWorldGranularContainer;
+import com.piotrek.groundworks.api.container.IWorldGranularContainer;
 import com.piotrek.groundworks.api.deposit.DepositResult;
 import com.piotrek.groundworks.api.material.GranularComposition;
 import com.piotrek.groundworks.api.material.GranularMaterial;
 import com.piotrek.groundworks.api.material.GranularMaterialRegistry;
 import com.piotrek.groundworksdumptruck.GroundworksDumpTruckMod;
+import com.piotrek.groundworksdumptruck.route.DumpTruckAutopilot;
 import com.piotrek.groundworksdumptruck.vehicle.DumpTruckMovementController;
 import com.piotrek.groundworksdumptruck.vehicle.ExhaustPuffs;
+import com.piotrek.groundworksdumptruck.vehicle.TruckLights;
+import com.piotrek.groundworksdumptruck.vehicle.TruckTrafficGuard;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
@@ -25,6 +30,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityDimensions;
+import net.minecraft.world.entity.Entity.RemovalReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.InterpolationHandler;
 import net.minecraft.world.entity.LinearInterpolationHandler;
@@ -34,6 +40,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.LightBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
@@ -108,13 +115,25 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Boolean> IS_DUMPING =
             SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Boolean> BRAKING =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<String> AUTOPILOT_STATE =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> ACTIVE_ROUTE =
+            SynchedEntityData.defineId(GroundworksDumpTruckEntity.class, EntityDataSerializers.STRING);
 
     private final DumpTruckMovementController movementController =
             new DumpTruckMovementController();
+    private final DumpTruckAutopilot autopilot =
+            new DumpTruckAutopilot(this);
+    private final java.util.ArrayList<BlockPos> headLightBlocks = new java.util.ArrayList<>();
+    private final java.util.ArrayList<BlockPos> tailLightBlocks = new java.util.ArrayList<>();
     private final GranularComposition loadComposition =
             new GranularComposition();
 
     private float inputThrottle;
+    private float trafficDesiredSpeed;
+    private boolean trafficYielding;
     private float inputSteer;
     private float inputBedLift;
     private int inputFreshTicks;
@@ -151,6 +170,9 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         builder.define(ENGINE_RUNNING, false);
         builder.define(ENGINE_LOAD, 0.0F);
         builder.define(IS_DUMPING, false);
+        builder.define(BRAKING, false);
+        builder.define(AUTOPILOT_STATE, "IDLE");
+        builder.define(ACTIVE_ROUTE, "");
     }
 
     public void setControlInputs(float throttle, float steer, float bedLift) {
@@ -158,6 +180,18 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         inputSteer = Mth.clamp(steer, -1.0F, 1.0F);
         inputBedLift = Mth.clamp(bedLift, -1.0F, 1.0F);
         inputFreshTicks = 5;
+    }
+
+    public float getInputThrottle() {
+        return inputThrottle;
+    }
+
+    public float getTrafficDesiredSpeed() {
+        return trafficDesiredSpeed;
+    }
+
+    public boolean isTrafficYielding() {
+        return trafficYielding;
     }
 
     @Override
@@ -172,6 +206,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         remoteAdvanceRemaining = Math.clamp(blocks, 0.1D, 4.0D);
         movementController.stopMotion();
         inputFreshTicks = 0;
+        autopilot.updateStationShift();
         return true;
     }
 
@@ -190,6 +225,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         }
 
         ServerLevel serverLevel = (ServerLevel) level();
+        autopilot.tick(serverLevel);
         Entity driver = getControllingPassenger();
 
         if (driver instanceof ServerPlayer player) {
@@ -219,6 +255,10 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             inputSteer = 0.0F;
             inputBedLift = 0.0F;
             inputFreshTicks = 0;
+        } else if (autopilot.isActive()) {
+            if (inputFreshTicks > 0) {
+                inputFreshTicks--;
+            }
         } else {
             inputThrottle = 0.0F;
             inputSteer = 0.0F;
@@ -226,8 +266,25 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
             inputFreshTicks = 0;
         }
 
-        boolean engineRunning = driver != null || remoteAdvanceRemaining > 0.01D;
+        boolean engineRunning = driver != null || remoteAdvanceRemaining > 0.01D || autopilot.isActive();
         entityData.set(ENGINE_RUNNING, engineRunning);
+
+        float speedBeforeStep = movementController.forwardSpeed();
+        // Retain intended motion while yielding so the priority holder does not
+        // misclassify the waiting vehicle as an unrelated stationary obstacle.
+        trafficDesiredSpeed = Math.abs(speedBeforeStep) > 0.02F ? speedBeforeStep
+                : Math.abs(inputThrottle) > 0.05F ? Math.copySign(0.15F, inputThrottle) : 0.0F;
+        trafficYielding = TruckTrafficGuard.mustStop(serverLevel, this);
+        if (trafficYielding) {
+            movementController.stopMotion();
+            inputThrottle = 0.0F;
+            inputSteer = 0.0F;
+        }
+        boolean braking = engineRunning && (
+                inputThrottle * speedBeforeStep < -0.0005F
+                        || (inputThrottle < -0.05F && speedBeforeStep <= 0.02F)
+        );
+        entityData.set(BRAKING, braking || trafficYielding);
 
         float fillRatio = (float) storedUnits() / (float) BED_CAPACITY;
         float driveDemand = Math.abs(inputThrottle) * (0.68F + 0.22F * fillRatio);
@@ -300,6 +357,12 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         Vec3 beforeMove = position();
         move(MoverType.SELF, new Vec3(dx, dy, dz));
 
+        if (driver != null || autopilot.isActive() || remoteAdvanceRemaining > 0.01D || Math.abs(speed) > 0.001F) {
+            this.syncPosition = true;
+            this.needsSync = true;
+            this.syncVelocity = true;
+        }
+
         if (remoteAdvanceRemaining > 0.01D) {
             Vec3 moved = position().subtract(beforeMove);
             double horizontal = Math.sqrt(moved.x * moved.x + moved.z * moved.z);
@@ -309,6 +372,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
                 remoteAdvanceRemaining = 0.0D;
                 movementController.stopMotion();
                 inputThrottle = 0.0F;
+                autopilot.updateStationShift();
             } else if (horizontal < 0.001D) {
                 // A blocked truck must not report the remote move as complete.
                 // Keep the remaining distance pending so the excavator waits.
@@ -326,8 +390,11 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         entityData.set(VEHICLE_PITCH, movementController.vehiclePitch());
         entityData.set(VEHICLE_ROLL, movementController.vehicleRoll());
         entityData.set(IS_DUMPING, dumping);
+        entityData.set(AUTOPILOT_STATE, autopilot.getState().name());
+        entityData.set(ACTIVE_ROUTE, autopilot.getRouteName());
 
         syncLoadData();
+        updateTruckLights();
     }
 
     @Override
@@ -370,6 +437,9 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         if (accepted > 0) {
             loadComposition.add(material, accepted);
             syncLoadData();
+            if (isBedFull()) {
+                autopilot.onBedFull();
+            }
         }
 
         return accepted;
@@ -392,6 +462,9 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
         int added = loadComposition.addAll(accepted);
         syncLoadData();
+        if (isBedFull()) {
+            autopilot.onBedFull();
+        }
         return added;
     }
 
@@ -446,15 +519,15 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         double localForward = delta.dot(forward);
         double localRight = delta.dot(right);
 
-        // The body is open from above. A bucket does not need to put its
+        // The body is open from above. A bucket or conveyor does not need to put its
         // release point physically inside the bed volume: it may pour from several
         // blocks above as long as the release point projects over the body opening.
-        // Horizontal limits follow the visible dump-bed footprint.
-        return Math.abs(localRight) <= 1.70D
-                && localForward >= -3.98D
-                && localForward <= 0.70D
-                && delta.y >= 0.70D
-                && delta.y <= 8.00D;
+        // Horizontal limits follow the full dump-bed catchment area.
+        return Math.abs(localRight) <= 1.95D
+                && localForward >= -4.25D
+                && localForward <= 1.10D
+                && delta.y >= 0.50D
+                && delta.y <= 14.00D;
     }
 
     /**
@@ -495,6 +568,10 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
                     material,
                     spilled
             );
+        }
+
+        if (isBedFull()) {
+            autopilot.onBedFull();
         }
 
         return accepted + spilled;
@@ -558,7 +635,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         return depositedTotal;
     }
 
-    private boolean tickDumping(ServerLevel level) {
+    public boolean tickDumping(ServerLevel level) {
         if (bedAngle <= DUMP_THRESHOLD_ANGLE
                 || loadComposition.isEmpty()) {
             return false;
@@ -589,6 +666,49 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         }
 
         Vec3 lip = getDumpLipWorldPosition();
+
+        IWorldGranularContainer receiver =
+                GranularContainerTransferApi.findReceiver(
+                        level,
+                        lip,
+                        this,
+                        4.5D
+                );
+
+        if (receiver != null && receiver.hasRoom()) {
+            GranularComposition outgoing =
+                    loadComposition.extractProportional(toDump);
+            int consumed = receiver.receiveCompositionAt(level, lip, outgoing);
+            if (consumed > 0) {
+                int leftover = outgoing.totalUnits() - consumed;
+                if (leftover > 0) {
+                    GranularComposition back = outgoing.extractProportional(leftover);
+                    loadComposition.addAll(back);
+                }
+                syncLoadData();
+                int dominantId = outgoing.dominantMaterialId();
+                GranularMaterial mat = dominantId > 0
+                        ? GranularMaterialRegistry.byId(dominantId)
+                        : GranularMaterial.EMPTY;
+                spawnDumpParticles(level, lip, mat, consumed);
+                if (tickCount % 5 == 0) {
+                    level.playSound(
+                            null,
+                            lip.x,
+                            lip.y,
+                            lip.z,
+                            SoundEvents.GRAVEL_PLACE,
+                            SoundSource.BLOCKS,
+                            0.85F,
+                            0.90F + level.getRandom().nextFloat() * 0.15F
+                    );
+                }
+                return true;
+            } else {
+                loadComposition.addAll(outgoing);
+            }
+        }
+
         BlockPos target = findDepositSurface(level, lip);
 
         if (target == null) {
@@ -678,7 +798,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         return true;
     }
 
-    private Vec3 getDumpLipWorldPosition() {
+    public Vec3 getDumpLipWorldPosition() {
         Vec3 forward = forwardVector();
 
         double angleRad = Math.toRadians(bedAngle);
@@ -895,6 +1015,14 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
     /** Stack mouth in world space. Same transform chain as DumpTruckRenderer. */
     public Vec3 exhaustTip(float modelXPx) {
+        return modelToWorld(modelXPx, EXHAUST_TIP_Y_PX, EXHAUST_TIP_Z_PX, true);
+    }
+
+    /**
+     * Model pixel to world. Cab parts need the cab shift. Chassis and bed
+     * points do not.
+     */
+    public Vec3 modelToWorld(float xPx, float yPx, float zPx, boolean cab) {
         Matrix4f mat = new Matrix4f();
         Vec3 base = position();
         mat.translate((float) base.x, (float) base.y, (float) base.z);
@@ -911,19 +1039,120 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
         mat.scale(-1.0F, -1.0F, 1.0F);
         mat.translate(0.0F, -1.5F, 0.0F);
-        mat.translate(0.0F, 0.0F, CAB_SHIFT_Z_PX / 16.0F);
+        if (cab) {
+            mat.translate(0.0F, 0.0F, CAB_SHIFT_Z_PX / 16.0F);
+        }
 
-        Vector4f mouth = new Vector4f(
-                modelXPx / 16.0F,
-                EXHAUST_TIP_Y_PX / 16.0F,
-                EXHAUST_TIP_Z_PX / 16.0F,
-                1.0F
-        );
-        mat.transform(mouth);
-        return new Vec3(mouth.x, mouth.y, mouth.z);
+        Vector4f point = new Vector4f(xPx / 16.0F, yPx / 16.0F, zPx / 16.0F, 1.0F);
+        mat.transform(point);
+        return new Vec3(point.x, point.y, point.z);
     }
 
-    private Vec3 forwardVector() {
+    /**
+     * Invisible light blocks on the ground, the same trick as the excavator
+     * floodlights. They follow the truck and go out when the engine stops.
+     */
+    private void updateTruckLights() {
+        if (!isEngineRunning()) {
+            clearHeldLights(headLightBlocks);
+            clearHeldLights(tailLightBlocks);
+            return;
+        }
+
+        Vec3 facing = forwardVector();
+        Vec3 feet = position();
+        syncLightBlocks(
+                headLightBlocks,
+                TruckLights.beams(
+                        modelToWorld(TruckLights.HEAD_LEFT_X, TruckLights.HEAD_Y, TruckLights.HEAD_Z, true),
+                        modelToWorld(TruckLights.HEAD_RIGHT_X, TruckLights.HEAD_Y, TruckLights.HEAD_Z, true),
+                        feet,
+                        facing,
+                        false
+                ),
+                TruckLights.HEAD_LEVEL
+        );
+        syncLightBlocks(
+                tailLightBlocks,
+                TruckLights.beams(
+                        modelToWorld(TruckLights.TAIL_LEFT_X, TruckLights.TAIL_Y, TruckLights.TAIL_Z, false),
+                        modelToWorld(TruckLights.TAIL_RIGHT_X, TruckLights.TAIL_Y, TruckLights.TAIL_Z, false),
+                        feet,
+                        facing,
+                        true
+                ),
+                isBraking() ? TruckLights.BRAKE_LEVEL : TruckLights.TAIL_LEVEL
+        );
+    }
+
+    private void syncLightBlocks(java.util.List<BlockPos> held, java.util.List<BlockPos> next, int level) {
+        for (int i = held.size() - 1; i >= 0; i--) {
+            BlockPos old = held.get(i);
+            if (next.contains(old)) {
+                continue;
+            }
+            held.remove(i);
+            releaseLight(old);
+        }
+
+        BlockState light = Blocks.LIGHT.defaultBlockState().setValue(LightBlock.LEVEL, level);
+        for (BlockPos pos : next) {
+            if (!level().isLoaded(pos)) {
+                continue;
+            }
+            BlockState state = level().getBlockState(pos);
+            if (state.isAir()) {
+                level().setBlock(pos, light, 3);
+                held.add(pos);
+            } else if (state.is(Blocks.LIGHT)) {
+                if (state.getValue(LightBlock.LEVEL) != level) {
+                    level().setBlock(pos, light, 3);
+                }
+                if (!held.contains(pos)) {
+                    held.add(pos);
+                }
+            }
+        }
+    }
+
+    private void clearHeldLights(java.util.List<BlockPos> held) {
+        for (int i = held.size() - 1; i >= 0; i--) {
+            releaseLight(held.remove(i));
+        }
+    }
+
+    private void releaseLight(BlockPos pos) {
+        if (headLightBlocks.contains(pos) || tailLightBlocks.contains(pos)) {
+            return;
+        }
+        if (level().isLoaded(pos) && level().getBlockState(pos).is(Blocks.LIGHT)) {
+            level().setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        }
+    }
+
+    private static void readHeldLights(ValueInput input, java.util.List<BlockPos> held, String key) {
+        held.clear();
+        int count = input.getIntOr(key + "Count", 0);
+        for (int i = 0; i < count && i < 24; i++) {
+            held.add(new BlockPos(
+                    input.getIntOr(key + "X" + i, 0),
+                    input.getIntOr(key + "Y" + i, 0),
+                    input.getIntOr(key + "Z" + i, 0)
+            ));
+        }
+    }
+
+    private static void writeHeldLights(ValueOutput output, java.util.List<BlockPos> held, String key) {
+        output.putInt(key + "Count", held.size());
+        for (int i = 0; i < held.size(); i++) {
+            BlockPos pos = held.get(i);
+            output.putInt(key + "X" + i, pos.getX());
+            output.putInt(key + "Y" + i, pos.getY());
+            output.putInt(key + "Z" + i, pos.getZ());
+        }
+    }
+
+    public Vec3 forwardVector() {
         double yawRad = Math.toRadians(getYRot());
         return new Vec3(
                 -Math.sin(yawRad),
@@ -932,7 +1161,7 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         );
     }
 
-    private Vec3 rightVector() {
+    public Vec3 rightVector() {
         double yawRad = Math.toRadians(getYRot());
         return new Vec3(
                 Math.cos(yawRad),
@@ -1177,6 +1406,9 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
         );
 
         syncLoadData();
+        readHeldLights(input, headLightBlocks, "HeadLight");
+        readHeldLights(input, tailLightBlocks, "TailLight");
+        autopilot.load(input, level() != null ? level().getServer() : null);
     }
 
     @Override
@@ -1190,10 +1422,55 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
                 movementController.vehicleRoll(),
                 loadComposition.toArray()
         ).save(output);
+        writeHeldLights(output, headLightBlocks, "HeadLight");
+        writeHeldLights(output, tailLightBlocks, "TailLight");
+        autopilot.save(output);
+    }
+
+    @Override
+    public void remove(RemovalReason reason) {
+        if (!level().isClientSide()) {
+            clearHeldLights(headLightBlocks);
+            clearHeldLights(tailLightBlocks);
+        }
+        super.remove(reason);
     }
 
     public float getBedAngle() {
         return entityData.get(BED_ANGLE);
+    }
+
+    public boolean isBedFull() {
+        return storedUnits() >= BED_CAPACITY;
+    }
+
+    public double calculateBumperGap(GroundworksDumpTruckEntity other) {
+        Vec3 forward = forwardVector();
+        Vec3 toOther = other.position().subtract(position());
+        double fwdDist = toOther.dot(forward);
+        return Math.max(0.0D, fwdDist - 6.4D);
+    }
+
+    public void onExcavatorHornSignal(Vec3 hornOrigin) {
+        if (!level().isClientSide()) {
+            autopilot.onExcavatorHorn(hornOrigin);
+        }
+    }
+
+    public DumpTruckAutopilot getAutopilot() {
+        return autopilot;
+    }
+
+    public DumpTruckMovementController getMovementController() {
+        return movementController;
+    }
+
+    public String getAutopilotState() {
+        return entityData.get(AUTOPILOT_STATE);
+    }
+
+    public String getActiveRoute() {
+        return entityData.get(ACTIVE_ROUTE);
     }
 
     public float getSteerAngle() {
@@ -1242,6 +1519,10 @@ public class GroundworksDumpTruckEntity extends Entity implements IMobileWorldGr
 
     public boolean isEngineRunning() {
         return entityData.get(ENGINE_RUNNING);
+    }
+
+    public boolean isBraking() {
+        return entityData.get(BRAKING);
     }
 
     public float getEngineLoad() {

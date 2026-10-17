@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "pw_groundworks_dump_truck_test",
+  "version": "1.0.0",
+  "name": "Dump truck route regression tests",
+  "environment": "client",
+  "entrypoints": {
+    "fabric-client-gametest": ["com.piotrek.groundworksdumptruck.gametest.RouteReplayClientGameTest"]
+  },
+  "depends": {
+    "pw_groundworks_dump_truck": "*",
+    "fabric-client-gametest-api-v1": "*"
+  }
+}
